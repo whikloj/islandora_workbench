@@ -5,6 +5,8 @@ import sys
 import json
 from json.decoder import JSONDecodeError
 import csv
+from typing import OrderedDict, Union
+
 import openpyxl
 import time
 import string
@@ -89,7 +91,7 @@ def set_media_type(config, filepath, file_fieldname, csv_row):
                     if key == media_url:
                         return value
 
-    # Determine if the incomtimg filepath matches a registered eEmbed media type.
+    # Determine if the incoming filepath matches a registered eEmbed media type.
     oembed_media_type = get_oembed_url_media_type(config, filepath)
     if oembed_media_type is not None:
         return oembed_media_type
@@ -585,7 +587,7 @@ def get_integration_module_version(config):
     url = config["host"] + "/islandora_workbench_integration/version"
     response = issue_request(config, "GET", url)
     if response.status_code == 200:
-        version_body = json.loads(response.text)
+        version_body = response.json()
         return version_body["integration_module_version"]
     else:
         logging.warning(
@@ -1349,7 +1351,7 @@ def get_field_definitions(config, entity_type, bundle_type=None):
             "handler_settings": None,
         }
 
-    if entity_type == "taxonomy_term":
+    elif entity_type == "taxonomy_term":
         fields = get_entity_fields(config, "taxonomy_term", bundle_type)
         for fieldname in fields:
             field_definitions[fieldname] = {}
@@ -1436,7 +1438,7 @@ def get_field_definitions(config, entity_type, bundle_type=None):
             "handler_settings": None,
         }
 
-    if entity_type == "media":
+    elif entity_type == "media":
         fields = get_entity_fields(config, entity_type, bundle_type)
         for fieldname in fields:
             field_definitions[fieldname] = {}
@@ -1528,7 +1530,7 @@ def get_field_definitions(config, entity_type, bundle_type=None):
             "handler_settings": None,
         }
 
-    if entity_type == "paragraph":
+    elif entity_type == "paragraph":
         fields = get_entity_fields(config, entity_type, bundle_type)
         for fieldname in fields:
             # NOTE, WIP on #292. Code below copied from 'node' section above, may need modification.
@@ -1653,7 +1655,7 @@ def get_entity_fields(config, entity_type, bundle_type):
 
     fields = []
     if bundle_type_response.status_code == 200:
-        node_config_raw = json.loads(bundle_type_response.text)
+        node_config_raw = bundle_type_response.json()
         fieldname_prefix = "field.field." + entity_type + "." + bundle_type + "."
         fields = [
             field_dependency.replace(fieldname_prefix, "")
@@ -1663,9 +1665,9 @@ def get_entity_fields(config, entity_type, bundle_type):
     else:
         message = "Workbench cannot retrieve field definitions from Drupal."
         if config["task"] == "create_terms" or config["task"] == "update_terms":
-            message_detail = f" Check that the vocabulary name identified in your vocab_id config setting is spelled correctly."
+            message_detail = f" Check that the vocabulary name ('{config['vocab_id']}' identified in your vocab_id config setting is spelled correctly."
         if config["task"] == "create" or config["task"] == "create_from_files":
-            message_detail = f" Check that the content type named in your content_type config setting is spelled correctly."
+            message_detail = f" Check that the content type ('{config['content_type']}') named in your content_type config setting is spelled correctly."
         logging.error(
             message
             + message_detail
@@ -2972,75 +2974,95 @@ def check_input(config, args):
                 logging.error(message)
                 sys.exit("Error: " + message)
 
-    if config["task"] in ["add_alt_text", "update_alt_text"]:
-        _alt_text_required_options = ["task", "host", "username", "password"]
-        for _alt_text_required_options in _alt_text_required_options:
-            if _alt_text_required_options not in config_keys:
+    if config["task"] in ["add_alt_text", "update_alt_text", "create"]:
+        # Alternative task data validation.
+        is_update_task = config["task"] in ["add_alt_text", "update_alt_text"]
+        if is_update_task:
+            # Do specific config checks for (add|update)_alt_text tasks.
+            _alt_text_required_options = ["task", "host", "username", "password"]
+            for _options in _alt_text_required_options:
+                if _options not in config_keys:
+                    message = (
+                        "Please check your config file for required values: "
+                        + joiner.join(_alt_text_required_options)
+                        + "."
+                    )
+                    logging.error(message)
+                    sys.exit("Error: " + message)
+            update_mode_options = ["replace", "append", "delete"]
+            if config["update_mode"] not in update_mode_options:
                 message = (
-                    "Please check your config file for required values: "
-                    + joiner.join(delete_media_required_options)
+                    'Your "update_mode" config option must be one of the following: '
+                    + joiner.join(update_mode_options)
                     + "."
                 )
                 logging.error(message)
                 sys.exit("Error: " + message)
-        update_mode_options = ["replace", "append", "delete"]
-        if config["update_mode"] not in update_mode_options:
-            message = (
-                'Your "update_mode" config option must be one of the following: '
-                + joiner.join(update_mode_options)
-                + "."
-            )
-            logging.error(message)
-            sys.exit("Error: " + message)
 
         validate_alt_text_csv_data = get_csv_data(config)
         row_counter = 0
         for count, row in enumerate(validate_alt_text_csv_data, start=1):
             row_counter += 1
-            if len(row["node_id"]) > 0:
-                node_id = row["node_id"]
-                parent_node_exists = ping_node(config, row["node_id"], warn=False)
-                if parent_node_exists is False:
-                    message = f'Node identified in "node_id" ({node_id}) in row "{row_counter}" of your input CSV cannot be found or accessed.'
+            if is_update_task:
+                if len(row["node_id"]) > 0:
+                    node_id = row["node_id"]
+                    parent_node_exists = ping_node(config, row["node_id"], warn=False)
+                    if parent_node_exists is False:
+                        message = f'Node identified in "node_id" ({node_id}) in row "{row_counter}" of your input CSV cannot be found or accessed.'
+                        logging.error(message)
+                        sys.exit(
+                            "Error: "
+                            + message
+                            + " See Workbench log for more information."
+                        )
+                else:
+                    message = f"Row {row_counter} in your input CSV file is empty."
                     logging.error(message)
                     sys.exit(
                         "Error: " + message + " See Workbench log for more information."
                     )
-            else:
-                message = f"Row {row_counter} in your input CSV file is empty."
-                logging.error(message)
-                sys.exit(
-                    "Error: " + message + " See Workbench log for more information."
-                )
 
-            if len(row["image_alt_text"]) > config["max_image_alt_text_length"]:
+            if (
+                "image_alt_text" in row
+                and len(row["image_alt_text"]) > config["max_image_alt_text_length"]
+            ):
                 image_alt_text = row["image_alt_text"]
                 max_alt_text_length = config["max_image_alt_text_length"]
-                node_id = row["node_id"]
+                node_id = row["node_id"] if is_update_task else row[config["id_field"]]
                 message = f"Alt text in input CSV row with node ID {node_id} is longer than the maximum configured alt text length ({max_alt_text_length})"
                 logging.warning(
                     message
                     + f" (length is {len(image_alt_text)} characters). This row will be skipped."
                 )
                 print("Warning: " + message + ". See log for more information.")
-
-    if config["task"] == "create":
-        validate_alt_text_csv_data = get_csv_data(config)
-        row_counter = 0
-        for count, row in enumerate(validate_alt_text_csv_data, start=1):
-            row_counter += 1
-            if "image_alt_text" in row:
-                if len(row["image_alt_text"]) > config["max_image_alt_text_length"]:
-                    image_alt_text = row["image_alt_text"]
-                    max_alt_text_length = config["max_image_alt_text_length"]
-                    node_id = row[config["id_field"]]
-                    message = f"Alt text in input CSV row with node ID {node_id} is longer than the maximum configured alt text length ({max_alt_text_length})"
-                    logging.warning(
-                        message
-                        + f" (length is {len(image_alt_text)} characters). Adding the alt text in this row will be skipped."
-                    )
-                    print("Warning: " + message + ". See log for more information.")
-
+            if "alt_text_fields" in config:
+                for alt_text_fields_column in config["alt_text_fields"].values():
+                    if alt_text_fields_column not in row:
+                        node_id = (
+                            row["node_id"]
+                            if is_update_task
+                            else row[config["id_field"]]
+                        )
+                        message = f"The alt text field column '{alt_text_fields_column}' specified in the configuration is not present in the CSV row with node ID {node_id}. Skipping alt text length validation for this column."
+                        logging.warning(message)
+                        print("Warning: " + message + ". See log for more information.")
+                    elif (
+                        len(row[alt_text_fields_column])
+                        > config["max_image_alt_text_length"]
+                    ):
+                        image_alt_text = row[alt_text_fields_column]
+                        max_alt_text_length = config["max_image_alt_text_length"]
+                        node_id = (
+                            row["node_id"]
+                            if is_update_task
+                            else row[config["id_field"]]
+                        )
+                        message = f"Alt text in input CSV row with node ID {node_id} is longer than the maximum configured alt text length ({max_alt_text_length})"
+                        logging.warning(
+                            message
+                            + f" (length is {len(image_alt_text)} characters). This row will be skipped."
+                        )
+                        print("Warning: " + message + ". See log for more information.")
     if config["task"] == "create_terms" or config["task"] == "update_terms":
         # Check that all required fields are present in the CSV.
         field_definitions = get_field_definitions(
@@ -3244,71 +3266,69 @@ def check_input(config, args):
                     )
                     logging.error(message)
                     sys.exit("Error: " + message)
-
-    if config["task"] == "delete":
+    # Tasks that require "node_id"
+    if config["task"] in [
+        "delete",
+        "add_media",
+        "update_media_by_node",
+        "delete_media_by_node",
+        "add_alt_text",
+        "update_alt_text",
+    ]:
         if "node_id" not in csv_column_headers:
-            message = (
-                'For "delete" tasks, your CSV file must contain a "node_id" column.'
-            )
+            message = f'For "{config["task"]}" tasks, your CSV file must contain a "node_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "add_media":
-        if "node_id" not in csv_column_headers:
-            message = (
-                'For "add_media" tasks, your CSV file must contain a "node_id" column.'
-            )
+    # Tasks that require "media_id"
+    if config["task"] in ["update_media", "delete_media"]:
+        if "media_id" not in csv_column_headers:
+            message = f'For "{config["task"]}" tasks, your CSV file must contain a "media_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
+    # Tasks that require "file"
+    if config["task"] in ["add_media"]:
         if "file" not in csv_column_headers:
-            message = (
-                'For "add_media" tasks, your CSV file must contain a "file" column.'
-            )
+            message = f'For "{config["task"]}" tasks, your CSV file must contain a "file" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "update_media":
-        if "media_id" not in csv_column_headers:
-            message = 'For "update_media" tasks, your CSV file must contain a "media_id" column.'
-            logging.error(message)
-            sys.exit("Error: " + message)
-    if config["task"] == "update_media_by_node":
-        if "node_id" not in csv_column_headers:
-            message = 'For "update_media_by_node" tasks, your CSV file must contain a "node_id" column.'
-            logging.error(message)
-            sys.exit("Error: " + message)
-    if config["task"] == "delete_media":
-        if "media_id" not in csv_column_headers:
-            message = 'For "delete_media" tasks, your CSV file must contain a "media_id" column.'
-            logging.error(message)
-            sys.exit("Error: " + message)
-    if config["task"] == "delete_media_by_node":
-        if "node_id" not in csv_column_headers:
-            message = 'For "delete_media_by_node" tasks, your CSV file must contain a "node_id" column.'
-            logging.error(message)
-            sys.exit("Error: " + message)
-    if config["task"] == "update_terms":
+    # Tasks that require "term_id"
+    if config["task"] in ["update_terms"]:
         if "term_id" not in csv_column_headers:
-            message = 'For "update_terms" tasks, your CSV file must contain a "term_id" column.'
+            message = f'For "{config["task"]}" tasks, your CSV file must contain a "term_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "create_redirects":
+    # Tasks that require "redirect_source" and "redirect_target"
+    if config["task"] in ["create_redirects"]:
         if "redirect_source" not in csv_column_headers:
-            message = 'For "create_redirects" tasks, your CSV file must contain a "redirect_source" column.'
+            message = f'For "{config["task"]}" tasks, your CSV file must contain a "redirect_source" column.'
             logging.error(message)
             sys.exit("Error: " + message)
         if "redirect_target" not in csv_column_headers:
-            message = 'For "create_redirects" tasks, your CSV file must contain a "redirect_target" column.'
+            message = f'For "{config["task"]}" tasks, your CSV file must contain a "redirect_target" column.'
             logging.error(message)
             sys.exit("Error: " + message)
+    # Tasks that require "image_alt_text" or alt_text_fields defined in config.
     if config["task"] in ["add_alt_text", "update_alt_text"]:
-        if "node_id" not in csv_column_headers:
-            t = config["task"]
-            message = f'For "{t}" tasks, your CSV file must contain a "node_id" column.'
-            logging.error(message)
-            sys.exit("Error: " + message)
-        if "image_alt_text" not in csv_column_headers:
-            message = f'For "{t}" tasks, your CSV file must contain a "image_alt_text" column.'
-            logging.error(message)
-            sys.exit("Error: " + message)
+        if "image_alt_text" not in csv_column_headers and (
+            "alt_text_fields" not in config or len(config["alt_text_fields"]) == 0
+        ):
+            message = (
+                f'For "{config["task"]}" tasks, your CSV file must contain either an "image_alt_text" or have an "alt_text_fields" field defined'
+                f"in your config with the specified column in your CSV file."
+            )
+        elif "image_alt_text" not in csv_column_headers:
+            missing_alt_fields = []
+            for field in config["alt_text_fields"].values():
+                if field not in csv_column_headers:
+                    missing_alt_fields.append(field)
+            if len(missing_alt_fields) > 0:
+                message = (
+                    f'For "{config["task"]}" tasks, your CSV file must contain either an "image_alt_text" or have the fields defined'
+                    f'in your "alt_text_fields" in your CSV file. You are missing the following columns: '
+                    f'{", ".join(missing_alt_fields)}.'
+                )
+                logging.error(message)
+                sys.exit("Error: " + message)
 
     warnings_about_redirect_input_csv = False
     if config["task"] == "create_redirects":
@@ -5456,8 +5476,13 @@ def create_file(config, filename, file_fieldname, node_csv_row, node_id):
 
 
 def create_media(
-    config, filename, file_fieldname, node_id, csv_row, media_use_tid=None
-):
+    config: dict,
+    filename: str,
+    file_fieldname: str,
+    node_id: str,
+    csv_row: OrderedDict,
+    media_use_tid: Union[str, int] = None,
+) -> Union[int, bool, None]:
     """Creates a media in Drupal.
 
     Parameters
@@ -5488,6 +5513,7 @@ def create_media(
         return None
 
     if len(filename.strip()) == 0:
+        # @TODO: Fix this message that uses a variable that is always None.
         if file_fieldname is None:
             message = (
                 'Media not created because field "'
@@ -5532,6 +5558,7 @@ def create_media(
         file_result = -1
     else:
         file_result = create_file(config, filename, file_fieldname, csv_row, node_id)
+        # @TODO: Need to handle the case of file_result == boolean because it failed to create the file.
 
     if filename.startswith("http"):
         if file_result > 0:
@@ -5540,24 +5567,23 @@ def create_media(
             )
 
     if isinstance(file_result, int):
-        if "media_use_tid" in csv_row and len(csv_row["media_use_tid"]) > 0:
+        if media_use_tid is not None:
+            media_use_tid_value = media_use_tid
+        elif "media_use_tid" in csv_row and len(csv_row["media_use_tid"]) > 0:
             media_use_tid_value = csv_row["media_use_tid"]
         else:
             media_use_tid_value = config["media_use_tid"]
-
-        if media_use_tid is not None:
-            media_use_tid_value = media_use_tid
 
         media_use_tids = []
         media_use_terms = str(media_use_tid_value).split(config["subdelimiter"])
         for media_use_term in media_use_terms:
             if value_is_numeric(media_use_term):
                 media_use_tids.append(media_use_term)
-            if not value_is_numeric(
+            elif not value_is_numeric(
                 media_use_term
             ) and media_use_term.strip().startswith("http"):
                 media_use_tids.append(get_term_id_from_uri(config, media_use_term))
-            if not value_is_numeric(
+            elif not value_is_numeric(
                 media_use_term
             ) and not media_use_term.strip().startswith("http"):
                 media_use_tids.append(
@@ -5648,7 +5674,6 @@ def create_media(
             # Use the 'paged_content_additional_page_media' config setting to determine
             # if any hOCR files are being added, since we need to explicitly define hOCR
             # media's MIME type as "text/vnd.hocr+html".
-            file_is_hocr = False
             if "paged_content_additional_page_media" in config:
                 file_mimetype = get_mimetype_from_extension(config, filename)
                 for uri_to_extension_mapping in config[
@@ -5658,15 +5683,15 @@ def create_media(
                         "https://discoverygarden.ca/use#hocr"
                         in uri_to_extension_mapping
                     ):
-                        file_is_hocr = True
-
-            if file_is_hocr is True:
-                media_use_uri = get_term_uri(config, media_use_tids[0])
-                if (
-                    media_use_uri == "https://discoverygarden.ca/use#hocr"
-                    and file_mimetype == "text/vnd.hocr+html"
-                ):
-                    media_json.update({"field_mime_type": [{"value": file_mimetype}]})
+                        media_use_uri = get_term_uri(config, media_use_tids[0])
+                        if (
+                            media_use_uri == "https://discoverygarden.ca/use#hocr"
+                            and file_mimetype == "text/vnd.hocr+html"
+                        ):
+                            media_json.update(
+                                {"field_mime_type": [{"value": file_mimetype}]}
+                            )
+                        break
 
         if "published" in csv_row and len(csv_row["published"]) > 0:
             media_json["status"] = {"value": csv_row["published"]}
@@ -5680,6 +5705,12 @@ def create_media(
             else:
                 alt_text = clean_image_alt_text(media_name)
                 media_json[media_field][0]["alt"] = alt_text
+        elif "alt_text_fields" in config and media_field in config["alt_text_fields"]:
+            alt_text = clean_image_alt_text(
+                csv_row[config["alt_text_fields"][media_field]]
+            )
+            media_json[media_field][0][media_field] = []
+            media_json[media_field][0][media_field]["value"] = alt_text
 
         # extracted_text media must have their field_edited_text field populated for full text indexing.
         # Text must be encoded as utf-8.
@@ -5689,7 +5720,9 @@ def create_media(
                 if os.path.isabs(filename) is False:
                     filename = os.path.join(config["input_dir"], filename)
                 try:
-                    extracted_text_file = open(filename, "r", -1, "utf-8-sig")
+                    extracted_text_file = open(
+                        filename, mode="r", buffering=-1, encoding="utf-8-sig"
+                    )
                     media_json["field_edited_text"].append(
                         {"value": extracted_text_file.read()}
                     )
@@ -6029,7 +6062,7 @@ def patch_image_alt_text(config, media_id, csv_row):
         if field_name == "title":
             alt_text = clean_image_alt_text(field_value)
         # "image_alt_text" can be in "create", "add_alt_text", or "update_alt_text" input CSV.
-        if field_name == "image_alt_text":
+        elif field_name == "image_alt_text":
             alt_text = clean_image_alt_text(field_value)
 
     max_image_alt_text_length = config["max_image_alt_text_length"]
@@ -10302,12 +10335,6 @@ def check_file_exists(config, filename):
         else:
             return False
 
-    # Fall back to False if existence of file can't be determined.
-    logging.warning(
-        f'Cannot determine if file "{filename}" exists, assuming it does not.'
-    )
-    return False
-
 
 def get_preprocessed_file_path(
     config, file_fieldname, node_csv_row, node_id=None, make_dir=True
@@ -10592,13 +10619,13 @@ def get_remote_file_extension(config, file_url):
         head_response = requests.head(
             file_url, allow_redirects=True, verify=config["secure_ssl_only"]
         )
-        mimetype = head_response.headers["Content-Type"]
+        mimetype = head_response.headers.get(
+            "Content-Type", head_response.headers.get("content-type")
+        )
         if mimetype is None:
-            mimetype = head_response.headers["content-type"]
-            if mimetype is None:
-                message = f'Cannot reliably get MIME type of file "{file_url}" from remote server.'
-                logging.error(message)
-                sys.exit("Error: " + message)
+            message = f'Cannot reliably get MIME type of file "{file_url}" from remote server.'
+            logging.error(message)
+            sys.exit("Error: " + message)
 
         # In case servers return stuff beside the MIME type in Content-Type header.
         # Assumes they use ; to separate stuff and that what we're looking for is
@@ -10643,7 +10670,7 @@ def get_csv_id_to_node_id_map_allowed_hosts_sql(config):
     allowed_hosts = copy.copy(config["csv_id_to_node_id_map_allowed_hosts"])
     if len(config["csv_id_to_node_id_map_allowed_hosts"]) > 0:
         # Since the user needs to add the current host to this list, we need to make sure it doesn't
-        # contain any trailing / or path information. Assums the protocol (e.g. https) is the same.
+        # contain any trailing / or path information. Assumes the protocol (e.g. https) is the same.
         for i in range(len(allowed_hosts)):
             if allowed_hosts[i].startswith(config["host"]):
                 allowed_hosts[i] = config["host"]
@@ -10758,7 +10785,7 @@ def resolve_media_use_term_id(config, media_use_term_id, node_id):
     return media_use_term_id
 
 
-def find_file_url_in_media(config, media_list, media_use_term_id, node_id):
+def find_file_url_in_media(media_list, media_use_term_id, node_id):
     """Find the file URL in media entries matching the use term."""
     for media in media_list:
         for file_field in file_fields:
@@ -10787,7 +10814,7 @@ def get_media_file_url(config, node_id, media_use_term_id=None, media_list=None)
     if resolved_term_id is None:
         return False
 
-    file_url = find_file_url_in_media(config, media_list, resolved_term_id, node_id)
+    file_url = find_file_url_in_media(media_list, resolved_term_id, node_id)
     if not file_url:
         return False
 
@@ -10837,7 +10864,7 @@ def download_file_from_drupal(config, node_id, media_use_term_id=None, media_lis
     if resolved_term_id is None:
         return False
 
-    file_url = find_file_url_in_media(config, media_list, resolved_term_id, node_id)
+    file_url = find_file_url_in_media(media_list, resolved_term_id, node_id)
     if not file_url:
         return False
 

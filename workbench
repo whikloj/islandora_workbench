@@ -2527,7 +2527,7 @@ def add_update_alt_text():
     both "add_alt_text" and "update_alt_text" tasks."""
     if config["task"] == "add_alt_text":
         task_name = "Add alt text"
-    if config["task"] == "update_alt_text":
+    else:
         task_name = "Update alt text"
     message = f'"{task_name}" task started using config file ' + args.config + "."
     print(message)
@@ -3519,37 +3519,35 @@ except KeyboardInterrupt:
 try:
     if config["task"] == "create":
         create()
-    if config["task"] == "update":
+    elif config["task"] == "update":
         update()
-    if config["task"] == "delete":
+    elif config["task"] == "delete":
         delete()
-    if config["task"] == "add_media":
+    elif config["task"] == "add_media":
         add_media()
-    if config["task"] == "delete_media":
+    elif config["task"] == "delete_media":
         delete_media()
-    if config["task"] == "delete_media_by_node":
+    elif config["task"] == "delete_media_by_node":
         delete_media_by_node()
-    if config["task"] == "create_from_files":
+    elif config["task"] == "create_from_files":
         create_from_files()
-    if config["task"] == "export_csv":
+    elif config["task"] == "export_csv":
         export_csv()
-    if config["task"] == "get_data_from_view":
+    elif config["task"] == "get_data_from_view":
         get_data_from_view()
-    if config["task"] == "get_media_report_from_view":
+    elif config["task"] == "get_media_report_from_view":
         get_media_report_from_view()
-    if config["task"] == "create_terms":
+    elif config["task"] == "create_terms":
         create_terms()
-    if config["task"] in ["update_media", "update_media_by_node"]:
+    elif config["task"] in ["update_media", "update_media_by_node"]:
         update_media()
-    if config["task"] == "update_terms":
+    elif config["task"] == "update_terms":
         update_terms()
-    if config["task"] == "create_redirects":
+    elif config["task"] == "create_redirects":
         create_redirects()
-    if config["task"] == "add_alt_text":
+    elif config["task"] in ["add_alt_text", "update_alt_text"]:
         add_update_alt_text()
-    if config["task"] == "update_alt_text":
-        add_update_alt_text()
-    if config["task"] == "run_scripts":
+    elif config["task"] == "run_scripts":
         run_scripts()
 
     if config["secondary_tasks"] is not None and len(config["secondary_tasks"]) > 0:

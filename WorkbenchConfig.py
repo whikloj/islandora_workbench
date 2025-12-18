@@ -77,66 +77,48 @@ class WorkbenchConfig:
 
         # Blend defaults with user mods
         for key, value in user_mods.items():
-            config[key] = value
+            if isinstance(value, dict):
+                if key not in config:
+                    config[key] = {}
+                for subkey, subvalue in value.items():
+                    config[key][subkey] = subvalue
+            else:
+                config[key] = value
 
         # Modify some conditional values.
         if "temp_dir" not in user_mods.keys():
             config["temp_dir"] = tempfile.gettempdir()
-        if user_mods["task"] in ["add_media", "update", "delete", "export_csv"]:
+        # Task specific defaults
+        if config["task"] in ["add_media", "update", "delete", "export_csv"]:
             config["id_field"] = "node_id"
-        if "task" == "delete_media":
+        elif config["task"] == "delete_media":
             config["id_field"] = "media_id"
-        if user_mods["task"] == "create_terms":
+        elif config["task"] == "create_terms":
             config["id_field"] = "term_name"
             config["allow_adding_terms"] = True
         # @todo: These two overrides aren't working. For now, they are set within workbench.update_terms().
-        if "task" == "update_terms":
+        elif config["task"] == "update_terms":
             config["id_field"] = "term_id"
+
         if "paged_content_page_content_type" not in user_mods:
             config["paged_content_page_content_type"] = config["content_type"]
-        # Add preprocessor, if specified.
-        if "preprocessors" in user_mods:
-            config["preprocessors"] = {}
-            for preprocessor in user_mods["preprocessors"]:
-                for key, value in preprocessor.items():
-                    config["preprocessors"][key] = value
 
         config["host"] = config["host"].rstrip("/")
-        if "csv_id_to_node_id_map_allowed_hosts" in user_mods:
-            config["csv_id_to_node_id_map_allowed_hosts"] = user_mods[
-                "csv_id_to_node_id_map_allowed_hosts"
-            ]
-        else:
+        if "csv_id_to_node_id_map_allowed_hosts" not in config:
             config["csv_id_to_node_id_map_allowed_hosts"] = ["", config["host"]]
         config["current_config_file_path"] = os.path.abspath(self.args.config)
         config["field_text_format_ids"] = self.get_field_level_text_output_formats()
 
-        if "csv_id_to_node_id_map_dir" in user_mods:
-            config["csv_id_to_node_id_map_dir"] = user_mods["csv_id_to_node_id_map_dir"]
-        if "csv_id_to_node_id_map_filename" in user_mods:
-            config["csv_id_to_node_id_map_filename"] = user_mods[
-                "csv_id_to_node_id_map_filename"
-            ]
-        if "csv_id_to_node_id_map_path" in user_mods:
-            config["csv_id_to_node_id_map_path"] = user_mods[
-                "csv_id_to_node_id_map_path"
-            ]
-        else:
+        if "csv_id_to_node_id_map_path" not in config:
             config["csv_id_to_node_id_map_path"] = os.path.join(
                 config["csv_id_to_node_id_map_dir"],
                 config["csv_id_to_node_id_map_filename"],
             )
 
-        if "path_to_python" in user_mods:
-            config["path_to_python"] = user_mods["path_to_python"]
-        else:
+        if "path_to_python" not in config:
             config["path_to_python"] = sys.executable
 
-        if "page_files_source_dir_field" in user_mods:
-            config["page_files_source_dir_field"] = user_mods[
-                "page_files_source_dir_field"
-            ]
-        else:
+        if "page_files_source_dir_field" not in config:
             config["page_files_source_dir_field"] = config["id_field"]
 
         config["config_file"] = self.args.config
@@ -145,10 +127,10 @@ class WorkbenchConfig:
 
     # Get user input as dictionary.
     def get_user_config(self):
-        yaml = YAML()
+        yaml_loader = YAML(typ="safe")
         with open(self.args.config, "r") as stream:
             try:
-                loaded = yaml.load(stream)
+                loaded = yaml_loader.load(stream)
             except YAMLError as exc:
                 print(
                     f"There appears to be a YAML syntax error in your configuration file, {self.args.config}. Remove "
@@ -174,8 +156,8 @@ class WorkbenchConfig:
         if "media_file_fields" in loaded:
             media_fields = self.get_media_fields()
             for media_field in loaded["media_file_fields"]:
-                for media_type, media_field in media_field.items():
-                    media_fields[media_type] = media_field
+                for media_type, media_field_val in media_field.items():
+                    media_fields[media_type] = media_field_val
             loaded["media_fields"] = media_fields
             loaded["media_type_file_fields"] = media_fields
         if os.path.isabs(self.args.config):
@@ -381,6 +363,7 @@ class WorkbenchConfig:
             "viewer_override_fieldname": "field_viewer_override",
             "check_for_workbench_updates": True,
             "use_workbench_permissions": False,
+            "image_alt_text_fields": {},
         }
 
     # Tests validity and existence of configuration file path.
