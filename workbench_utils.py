@@ -3,10 +3,9 @@
 import os
 import sys
 import json
+import tempfile
 from argparse import Namespace
 from csv import DictReader
-from functools import lru_cache
-from json.decoder import JSONDecodeError
 import csv
 from typing import OrderedDict, Union, Optional
 
@@ -1708,6 +1707,7 @@ def check_input(config: dict, args: Namespace) -> None:
     check_integration_module_version(config, log_success=False)
 
     rows_with_missing_files = list()
+    csv_reader = WorkbenchCsvReader()
 
     # @todo #606: break out node entity and reserved field, media entity and reserved field, and term entity and reserved fields?
     node_base_fields = [
@@ -1793,7 +1793,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
         # Check to see if there are any "host" column values in the CSV ID to node ID map that
         # aren't empty or the current config["host"] value.
-        check_for_parent_csv_data = get_csv_data(config)
+        check_for_parent_csv_data = csv_reader.get_csv_data(config)
         check_for_parent_csv_headers = check_for_parent_csv_data.fieldnames
         # This is the set of conditions where the map is queried to get parent node IDs. AFAIK it's
         # complete but if others come up, they should be added here.
@@ -2039,7 +2039,8 @@ def check_input(config: dict, args: Namespace) -> None:
     check_csv_file_exists(config, "node_fields")
 
     # Check column headers in CSV file. Does not apply to add_media or update_media/update_media_by_node tasks (handled just below).
-    csv_data = get_csv_data(config)
+    csv_reader = WorkbenchCsvReader()
+    csv_data = csv_reader.get_csv_data(config)
     if config["csv_headers"] == "labels" and config["task"] in [
         "create",
         "update",
@@ -2159,7 +2160,7 @@ def check_input(config: dict, args: Namespace) -> None:
         row_filter_settings.append("csv_rows_to_process")
     if "csv_row_filters" in config:
         row_filter_settings.append("csv_row_filters")
-    if commented_out_input_csv_rows_present is True:
+    if csv_reader.has_commented_out_rows() is True:
         row_filter_settings.append(True)
     if len(row_filter_settings) > 1:
         preprocessed_input_csv_file_path = get_preprocessed_input_csv_file_path(config)
@@ -2220,7 +2221,7 @@ def check_input(config: dict, args: Namespace) -> None:
                 print(message)
                 logging.info(message)
         if "url_alias" in csv_column_headers:
-            validate_url_aliases_csv_data = get_csv_data(config)
+            validate_url_aliases_csv_data = csv_reader.get_csv_data(config)
             validate_url_aliases(config, validate_url_aliases_csv_data)
 
         # We populate the ISLANDORA_WORKBENCH_PRIMARY_TASK_EXECUTION_START_TIME environment variable here so secondary
@@ -2234,13 +2235,13 @@ def check_input(config: dict, args: Namespace) -> None:
                 workbench_execution_start_time
             )
         if "parent_id" in csv_column_headers:
-            validate_parent_ids_precede_children_csv_data = get_csv_data(config)
+            validate_parent_ids_precede_children_csv_data = csv_reader.get_csv_data(config)
             validate_parent_ids_precede_children(
                 config, validate_parent_ids_precede_children_csv_data
             )
             prepare_csv_id_to_node_id_map(config)
             if config["query_csv_id_to_node_id_map_for_parents"] is True:
-                validate_parent_ids_in_csv_id_to_node_id_map_csv_data = get_csv_data(
+                validate_parent_ids_in_csv_id_to_node_id_map_csv_data = csv_reader.get_csv_data(
                     config
                 )
                 validate_parent_ids_in_csv_id_to_node_id_map(
@@ -2482,7 +2483,7 @@ def check_input(config: dict, args: Namespace) -> None:
         print(message)
         logging.info(message)
 
-        validate_required_fields_have_values_csv_data = get_csv_data(config)
+        validate_required_fields_have_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_required_fields_have_values(
             config,
@@ -2493,12 +2494,12 @@ def check_input(config: dict, args: Namespace) -> None:
         # Validate dates in 'created' field, if present.
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         if "created" in csv_column_headers:
-            validate_node_created_csv_data = get_csv_data(config)
+            validate_node_created_csv_data = csv_reader.get_csv_data(config)
             validate_node_created_date(config, validate_node_created_csv_data)
         # Validate user IDs in 'uid' field, if present.
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         if "uid" in csv_column_headers:
-            validate_node_uid_csv_data = get_csv_data(config)
+            validate_node_uid_csv_data = csv_reader.get_csv_data(config)
             validate_node_uid(config, validate_node_uid_csv_data)
 
     if config["task"] == "update":
@@ -2510,7 +2511,7 @@ def check_input(config: dict, args: Namespace) -> None:
             sys.exit("Error: " + message)
         if "url_alias" in csv_column_headers:
             # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-            validate_url_aliases_csv_data = get_csv_data(config)
+            validate_url_aliases_csv_data = csv_reader.get_csv_data(config)
             validate_url_aliases(config, validate_url_aliases_csv_data)
         field_definitions = get_field_definitions(config, "node")
         drupal_fieldnames = []
@@ -2564,7 +2565,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
     # If the task is update media, check if all media_id values are valid.
     if config["task"] in ["update_media"]:
-        csv_data = get_csv_data(config)
+        csv_data = csv_reader.get_csv_data(config)
         row_number = 1
         for row in csv_data:
             media_id = extract_media_id(config, row)
@@ -2604,7 +2605,7 @@ def check_input(config: dict, args: Namespace) -> None:
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_media_use_tid(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_media_use_tid_values_csv_data = get_csv_data(config)
+        validate_media_use_tid_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_media_use_tids_in_csv(config, validate_media_use_tid_values_csv_data)
 
@@ -2627,7 +2628,7 @@ def check_input(config: dict, args: Namespace) -> None:
             fixity_message = "Performing local checksum validation."
             logging.info(fixity_message)
             print(fixity_message + " This might take some time.")
-            validate_checksums_csv_data = get_csv_data(config)
+            validate_checksums_csv_data = csv_reader.get_csv_data(config)
             if config["task"] == "add_media":
                 row_id = "node_id"
             else:
@@ -2708,7 +2709,7 @@ def check_input(config: dict, args: Namespace) -> None:
             config, "taxonomy_term", config["vocab_id"]
         )
         required_fields.insert(0, "term_name")
-        required_fields_check_csv_data = get_csv_data(config)
+        required_fields_check_csv_data = csv_reader.get_csv_data(config)
         missing_fields = []
         for required_field in required_fields:
             if required_field not in required_fields_check_csv_data.fieldnames:
@@ -2724,7 +2725,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
         # Validate length of 'term_name'.
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_term_name_csv_data = get_csv_data(config)
+        validate_term_name_csv_data = csv_reader.get_csv_data(config)
         for count, row in enumerate(validate_term_name_csv_data, start=1):
             if "term_name" in row and len(row["term_name"]) > 255:
                 message = (
@@ -2779,7 +2780,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
         # Validate length of 'term_name'.
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_term_name_csv_data = get_csv_data(config)
+        validate_term_name_csv_data = csv_reader.get_csv_data(config)
         for count, row in enumerate(validate_term_name_csv_data, start=1):
             if "term_name" in row and len(row["term_name"]) > 255:
                 message = (
@@ -2811,7 +2812,7 @@ def check_input(config: dict, args: Namespace) -> None:
             logging.error(message)
             sys.exit("Error: " + message)
 
-        validate_alt_text_csv_data = get_csv_data(config)
+        validate_alt_text_csv_data = csv_reader.get_csv_data(config)
         row_counter = 0
         for count, row in enumerate(validate_alt_text_csv_data, start=1):
             row_counter += 1
@@ -2843,7 +2844,7 @@ def check_input(config: dict, args: Namespace) -> None:
                 print("Warning: " + message + ". See log for more information.")
 
     if config["task"] == "create":
-        validate_alt_text_csv_data = get_csv_data(config)
+        validate_alt_text_csv_data = csv_reader.get_csv_data(config)
         row_counter = 0
         for count, row in enumerate(validate_alt_text_csv_data, start=1):
             row_counter += 1
@@ -2864,39 +2865,39 @@ def check_input(config: dict, args: Namespace) -> None:
         field_definitions = get_field_definitions(
             config, "taxonomy_term", config["vocab_id"]
         )
-        validate_geolocation_values_csv_data = get_csv_data(config)
+        validate_geolocation_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_geolocation_fields(
             config, field_definitions, validate_geolocation_values_csv_data
         )
 
-        validate_link_values_csv_data = get_csv_data(config)
+        validate_link_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_link_fields(config, field_definitions, validate_link_values_csv_data)
 
-        validate_authority_link_values_csv_data = get_csv_data(config)
+        validate_authority_link_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_authority_link_fields(
             config, field_definitions, validate_authority_link_values_csv_data
         )
 
-        validate_edtf_values_csv_data = get_csv_data(config)
+        validate_edtf_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_edtf_fields(config, field_definitions, validate_edtf_values_csv_data)
 
-        validate_csv_field_cardinality_csv_data = get_csv_data(config)
+        validate_csv_field_cardinality_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_csv_field_cardinality(
             config, field_definitions, validate_csv_field_cardinality_csv_data
         )
 
-        validate_csv_field_length_csv_data = get_csv_data(config)
+        validate_csv_field_length_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_csv_field_length(
             config, field_definitions, validate_csv_field_length_csv_data
         )
 
-        validate_taxonomy_field_csv_data = get_csv_data(config)
+        validate_taxonomy_field_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_taxo_terms = validate_taxonomy_field_values(
             config, field_definitions, validate_taxonomy_field_csv_data
@@ -2906,7 +2907,7 @@ def check_input(config: dict, args: Namespace) -> None:
                 "Warning: Issues detected with validating taxonomy field values in the CSV file. See the log for more detail."
             )
 
-        validate_typed_relation_csv_data = get_csv_data(config)
+        validate_typed_relation_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_typed_relation_terms = validate_typed_relation_field_values(
             config, field_definitions, validate_typed_relation_csv_data
@@ -2918,45 +2919,45 @@ def check_input(config: dict, args: Namespace) -> None:
 
     if config["task"] == "update" or config["task"] == "create":
         field_definitions = get_field_definitions(config, "node")
-        validate_geolocation_values_csv_data = get_csv_data(config)
+        validate_geolocation_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_geolocation_fields(
             config, field_definitions, validate_geolocation_values_csv_data
         )
 
-        validate_link_values_csv_data = get_csv_data(config)
+        validate_link_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_link_fields(config, field_definitions, validate_link_values_csv_data)
 
-        validate_authority_link_values_csv_data = get_csv_data(config)
+        validate_authority_link_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_authority_link_fields(
             config, field_definitions, validate_authority_link_values_csv_data
         )
 
-        validate_edtf_values_csv_data = get_csv_data(config)
+        validate_edtf_values_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_edtf_fields(config, field_definitions, validate_edtf_values_csv_data)
 
-        validate_csv_field_cardinality_csv_data = get_csv_data(config)
+        validate_csv_field_cardinality_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_csv_field_cardinality(
             config, field_definitions, validate_csv_field_cardinality_csv_data
         )
 
-        validate_csv_field_length_csv_data = get_csv_data(config)
+        validate_csv_field_length_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_csv_field_length(
             config, field_definitions, validate_csv_field_length_csv_data
         )
 
-        validate_text_list_fields_data = get_csv_data(config)
+        validate_text_list_fields_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_text_list_fields(
             config, field_definitions, validate_text_list_fields_data
         )
 
-        validate_taxonomy_field_csv_data = get_csv_data(config)
+        validate_taxonomy_field_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_taxo_terms = validate_taxonomy_field_values(
             config, field_definitions, validate_taxonomy_field_csv_data
@@ -2966,7 +2967,7 @@ def check_input(config: dict, args: Namespace) -> None:
                 "Warning: Issues detected with validating taxonomy field values in the CSV file. See the log for more detail."
             )
 
-        validate_typed_relation_csv_data = get_csv_data(config)
+        validate_typed_relation_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_typed_relation_terms = validate_typed_relation_field_values(
             config, field_definitions, validate_typed_relation_csv_data
@@ -2976,11 +2977,11 @@ def check_input(config: dict, args: Namespace) -> None:
                 "Warning: Issues detected with validating typed relation field values in the CSV file. See the log for more detail."
             )
 
-        validate_numeric_fields_data = get_csv_data(config)
+        validate_numeric_fields_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_numeric_fields(config, field_definitions, validate_numeric_fields_data)
 
-        validate_media_track_csv_data = get_csv_data(config)
+        validate_media_track_csv_data = csv_reader.get_csv_data(config)
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_media_track_fields(config, validate_media_track_csv_data)
 
@@ -2988,7 +2989,7 @@ def check_input(config: dict, args: Namespace) -> None:
         # See https://github.com/mjordan/islandora_workbench/issues/90.
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         if config["validate_parent_node_exists"] is True:
-            validate_field_member_of_csv_data = get_csv_data(config)
+            validate_field_member_of_csv_data = csv_reader.get_csv_data(config)
             for count, row in enumerate(validate_field_member_of_csv_data, start=1):
                 if "field_member_of" in csv_column_headers:
                     parent_nids = row["field_member_of"].split(config["subdelimiter"])
@@ -3049,7 +3050,7 @@ def check_input(config: dict, args: Namespace) -> None:
         # Validate 'langcode' values if that field exists in the CSV.
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         if langcode_was_present:
-            validate_langcode_csv_data = get_csv_data(config)
+            validate_langcode_csv_data = csv_reader.get_csv_data(config)
             for count, row in enumerate(validate_langcode_csv_data, start=1):
                 langcode_valid = validate_language_code(row["langcode"])
                 if not langcode_valid:
@@ -3070,45 +3071,45 @@ def check_input(config: dict, args: Namespace) -> None:
             )
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "add_media":
+    elif config["task"] == "add_media":
         if "node_id" not in csv_column_headers:
             message = (
                 'For "add_media" tasks, your CSV file must contain a "node_id" column.'
             )
             logging.error(message)
             sys.exit("Error: " + message)
-        if "file" not in csv_column_headers:
+        elif "file" not in csv_column_headers:
             message = (
                 'For "add_media" tasks, your CSV file must contain a "file" column.'
             )
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "update_media":
+    elif config["task"] == "update_media":
         if "media_id" not in csv_column_headers:
             message = 'For "update_media" tasks, your CSV file must contain a "media_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "update_media_by_node":
+    elif config["task"] == "update_media_by_node":
         if "node_id" not in csv_column_headers:
             message = 'For "update_media_by_node" tasks, your CSV file must contain a "node_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "delete_media":
+    elif config["task"] == "delete_media":
         if "media_id" not in csv_column_headers:
             message = 'For "delete_media" tasks, your CSV file must contain a "media_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "delete_media_by_node":
+    elif config["task"] == "delete_media_by_node":
         if "node_id" not in csv_column_headers:
             message = 'For "delete_media_by_node" tasks, your CSV file must contain a "node_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "update_terms":
+    elif config["task"] == "update_terms":
         if "term_id" not in csv_column_headers:
             message = 'For "update_terms" tasks, your CSV file must contain a "term_id" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] == "create_redirects":
+    elif config["task"] == "create_redirects":
         if "redirect_source" not in csv_column_headers:
             message = 'For "create_redirects" tasks, your CSV file must contain a "redirect_source" column.'
             logging.error(message)
@@ -3117,7 +3118,7 @@ def check_input(config: dict, args: Namespace) -> None:
             message = 'For "create_redirects" tasks, your CSV file must contain a "redirect_target" column.'
             logging.error(message)
             sys.exit("Error: " + message)
-    if config["task"] in ["add_alt_text", "update_alt_text"]:
+    elif config["task"] in ["add_alt_text", "update_alt_text"]:
         if "node_id" not in csv_column_headers:
             t = config["task"]
             message = f'For "{t}" tasks, your CSV file must contain a "node_id" column.'
@@ -3147,7 +3148,7 @@ def check_input(config: dict, args: Namespace) -> None:
             logging.error(message)
             sys.exit("Error: " + message)
 
-        check_for_redirects_csv_data = get_csv_data(config)
+        check_for_redirects_csv_data = csv_reader.get_csv_data(config)
         for count, row in enumerate(check_for_redirects_csv_data, start=1):
             if len(row["redirect_source"].strip()) == 0:
                 message = f"Redirect source value in input CSV row {count} is empty. Redirect will not be created."
@@ -3258,7 +3259,7 @@ def check_input(config: dict, args: Namespace) -> None:
             if config["task"] == "update_media_by_node":
                 config["id_field"] = "node_id"
 
-            file_check_csv_data = get_csv_data(config)
+            file_check_csv_data = csv_reader.get_csv_data(config)
             for count, file_check_row in enumerate(file_check_csv_data, start=1):
                 file_check_row["file"] = file_check_row["file"].strip()
                 # Check for and log empty 'file' values.
@@ -3369,7 +3370,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
             # Verify that all media bundles/types exist.
             if config["nodes_only"] is False:
-                media_type_check_csv_data = get_csv_data(config)
+                media_type_check_csv_data = csv_reader.get_csv_data(config)
                 for count, file_check_row in enumerate(
                     media_type_check_csv_data, start=1
                 ):
@@ -3454,7 +3455,7 @@ def check_input(config: dict, args: Namespace) -> None:
     ):
         if "additional_files" in config and len(config["additional_files"]) > 0:
             additional_files_entries = get_additional_files_config(config)
-            additional_files_check_csv_data = get_csv_data(config)
+            additional_files_check_csv_data = csv_reader.get_csv_data(config)
             additional_files_fields = additional_files_entries.keys()
             additional_files_fields_csv_headers = (
                 additional_files_check_csv_data.fieldnames
@@ -3578,7 +3579,7 @@ def check_input(config: dict, args: Namespace) -> None:
             and len(config["additional_files"]) > 0
             and config["nodes_only"] is False
         ):
-            additional_files_check_extensions_csv_data = get_csv_data(config)
+            additional_files_check_extensions_csv_data = csv_reader.get_csv_data(config)
             # Check media types for files registered in 'additional_files'.
             for count, file_check_row in enumerate(
                 additional_files_check_extensions_csv_data, start=1
@@ -3696,7 +3697,7 @@ def check_input(config: dict, args: Namespace) -> None:
                 sys.exit("Error: " + message)
 
         paged_content_sequence_indicator_warnings = False
-        paged_content_from_directories_csv_data = get_csv_data(config)
+        paged_content_from_directories_csv_data = csv_reader.get_csv_data(config)
         for count, file_check_row in enumerate(
             paged_content_from_directories_csv_data, start=1
         ):
@@ -3944,7 +3945,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
     # Checks for "run_scripts" task.
     if config["task"] == "run_scripts":
-        run_scripts_check_csv_data = get_csv_data(config)
+        run_scripts_check_csv_data = csv_reader.get_csv_data(config)
         csv_column_headers = run_scripts_check_csv_data.fieldnames
         if "run_scripts_entity_type" not in config:
             message = 'Required "run_scripts_entity_type" setting not in config file.'
@@ -6140,6 +6141,609 @@ def get_preprocessed_input_csv_file_path(config: dict) -> str:
         os.path.join(config["temp_dir"], os.path.basename(config["input_csv"]))
         + ".preprocessed"
     )
+
+class WorkbenchCsvReader:
+    """A CSV reader that preprocesses the input CSV file according to the
+    configuration settings and caches it to avoid re-reading from disk each time."""
+
+    _instance = None
+    _cache_file_path: str = None
+    _config: dict = None
+    _commented_out_input_csv_rows_present = False
+    _csv_file_handle = None
+
+    def __new__(cls, *args, **kwargs):
+        """We always want to return the same instance just incase the class variables have already been set."""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __exit__(self, exc_type, exc, tb):
+        """Ensure the CSV file handle is closed on exit."""
+        if self._csv_file_handle:
+            self._csv_file_handle.close()
+
+    @staticmethod
+    def _get_csv_cache_path(config: dict, csv_file_target: str, file_path: str = None) -> str:
+        """
+        Generate a unique cache file path for this CSV configuration.
+
+        The cache path is based on:
+        - Source file path
+        - The csv_file_target
+        - The entire current configuration, sorted to avoid ordering issues
+        - Hash to ensure uniqueness
+
+        Returns a path like: /tmp/workbench_cache_abc123def456.csv
+
+        Parameters:
+            :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
+            :param csv_file_target: str - The target type of the CSV file (e.g., "node_fields", "media_fields").
+            :param file_path: str - The path to the source CSV file.
+        Returns:
+            :return: str - The path to the cache file.
+        """
+        full_file_path = WorkbenchCsvReader._get_source_file_path(config, csv_file_target, file_path)
+
+        effective_config = {
+            "file_path": full_file_path,
+            "csv_file_target": csv_file_target,
+            **config,
+        }
+
+        # Canonical, order-independent representation
+        config_json = json.dumps(
+            effective_config,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+
+        config_hash = hashlib.sha256(config_json.encode()).hexdigest()[:12]
+
+        # Use the configured temp directory or the system temp directory
+        temp_dir = config.get("temp_dir", tempfile.gettempdir())
+        cache_filename = f"workbench_csv_cache_{config_hash}.csv"
+
+        return os.path.join(temp_dir, cache_filename)
+
+    @staticmethod
+    def _get_source_file_path(config: dict, csv_file_target: str, file_path: str = None) -> str:
+        """Resolve the actual source file path for the CSV file.
+        Parameters:
+            :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
+            :param csv_file_target: str - The target type of the CSV file (e.g., "node_fields", "media_fields").
+            :param file_path: str - The path to the source CSV file.
+        Returns:
+            :return: str - The resolved source file path.
+        """
+        if csv_file_target == "node_fields":
+            file_path = config["input_csv"]
+
+        if os.path.isabs(file_path):
+            return file_path
+        elif file_path.startswith("http") or file_path.endswith(".xlsx"):
+            # For Google Sheets, etc.
+            extracted_path = get_extracted_csv_file_path(config)
+            # Download if not already present
+            if not os.path.exists(extracted_path):
+                if file_path.startswith("http"):
+                    get_csv_from_google_sheet(config)
+                elif file_path.endswith(".xlsx"):
+                    get_csv_from_excel(config)
+            return extracted_path
+        else:
+            return os.path.join(config["input_dir"], file_path)
+
+    def has_commented_out_rows(self) -> bool:
+        """Check if the CSV had commented out rows during preprocessing.
+        Returns
+            :return: bool - True if commented out rows were present, False otherwise.
+        """
+        return self._commented_out_input_csv_rows_present
+
+    @staticmethod
+    def _is_cache_valid(cache_path: str, source_path: str) -> bool:
+        """
+        Check if cached preprocessed file is still valid.
+
+        Cache is valid if:
+        1. Cache file exists
+        2. Cache file is newer than source file
+        3. Cache file is not empty
+
+        Parameters
+            :param cache_path: str - The path to the cache file.
+            :param source_path: str - The path to the source CSV file.
+        Returns
+            :return: bool - True if cache is valid, False otherwise.
+
+        """
+        if not os.path.exists(cache_path):
+            return False
+
+        if not os.path.exists(source_path):
+            return False
+
+        # Check if cache is newer than source
+        cache_mtime = os.path.getmtime(cache_path)
+        source_mtime = os.path.getmtime(source_path)
+
+        if cache_mtime <= source_mtime:
+            logging.debug(f"Cache invalid: source file modified after cache creation")
+            return False
+
+        # Check if cache is not empty
+        if os.path.getsize(cache_path) == 0:
+            logging.debug(f"Cache invalid: cache file is empty")
+            return False
+
+        return True
+
+    def _preprocess_field_names(self, field_names: list) -> list:
+        pass
+
+    @staticmethod
+    def _validate_field_names(config: dict, field_names: list) -> None:
+        """Validate the field names in the CSV header against the task requirements.
+        Parameters
+            :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
+            :param field_names: list - The list of field names from the CSV header.
+        """
+        # Even though we check for the task's expected ID column in the incoming CSV in check_input(),
+        # we need to check it here as well since check_input() reads the CSV prior to those checks.
+        # TODO: Why can't these checks exist in check_input() only?
+        id_columns = {
+            "create": config["id_field"],
+            "update": "node_id",
+            "delete": "node_id",
+            "add_media": "node_id",
+            "delete_media": "media_id",
+            "delete_media_by_node": "node_id",
+            "update_media": "media_id",
+            "update_media_by_node": "node_id",
+            "create_terms": "term_name",
+            "update_terms": "term_id",
+            "export_csv": "node_id",
+        }
+        for task, id_column in id_columns.items():
+            if (
+                    task == config["task"]
+                    and id_columns[config["task"]] not in field_names
+            ):
+                message = f'"{task}" tasks require a "{id_columns[task]}" CSV column. Please check your input CSV file and try again.'
+                logging.error(message)
+                sys.exit("Error: " + message)
+
+        if config["task"] == "run_scripts":
+            run_scripts_entity_type = config["run_scripts_entity_type"]
+            id_columns = {"node": "node_id", "media": "media_id", "term": "term_id"}
+            if id_columns[config["run_scripts_entity_type"]] not in field_names:
+                message = f'"run_scripts" tasks for "{run_scripts_entity_type}" entities require a "{id_columns[run_scripts_entity_type]}" CSV column. Please check your input CSV file and try again.'
+                logging.error(message)
+                sys.exit("Error: " + message)
+
+        seen = set()
+        duplicates = []
+        for item in field_names:
+            if item not in seen:
+                seen.add(item)
+            else:
+                duplicates.append(item)
+        if len(duplicates) > 0:
+            message = "Error: CSV has duplicate header names - " + ", ".join(duplicates)
+            logging.error(message)
+            sys.exit(message)
+
+    @staticmethod
+    def _get_csv_row_filters(config: dict) -> Union[tuple[dict, dict], None]:
+        """Get the CSV row filtering parameters from the config.
+        Parameters
+            :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
+        Returns
+           :return: tuple | None -  a tuple of is and is not dictionaries or None if no filters are defined.
+        """
+        # Prepare any "csv_row_filters", which we apply to each row, below.
+        if "csv_row_filters" in config and len(config["csv_row_filters"]) > 0:
+            row_filters_is = dict()
+            row_filters_isnot = dict()
+            # Then populate the lists of filter values.
+            for filter_config in config["csv_row_filters"]:
+                filter_group = filter_config.split(":")
+                # Prepare the '' filter value.
+                if filter_group[2] == "''" or filter_group[2] == '""':
+                    filter_group[2] = ""
+                if filter_group[1] == "is":
+                    filter_group_field = filter_group[0]
+                    filter_group_value = filter_group[2]
+                    if filter_group_field not in row_filters_is.keys():
+                        row_filters_is[filter_group_field] = []
+                    row_filters_is[filter_group_field].append(
+                        filter_group_value.strip()
+                    )
+                elif filter_group[1] == "isnot":
+                    filter_group_field = filter_group[0]
+                    filter_group_value = filter_group[2]
+                    if filter_group_field not in row_filters_isnot.keys():
+                        row_filters_isnot[filter_group_field] = []
+                    row_filters_isnot[filter_group_field].append(
+                        filter_group_value.strip()
+                    )
+                else:
+                    message = f'Invalid csv_row_filters operator "{filter_group[1]}" in config file; must be "is" or "isnot".'
+                    logging.error(message)
+                    sys.exit("Error: " + message)
+            return row_filters_is, row_filters_isnot
+        return None
+
+    @staticmethod
+    def get_media_id(config: dict, row: OrderedDict) -> Union[str, None]:
+        # Get the media ID(s) attached to the node at row["node_id"]. If there is only one
+        # media ID, write it to the .preprocessed CSV file in the "media_id" column. If there
+        # are none, or more than one, log that and move on to next row.
+        if config["task"] == "update_media_by_node":
+            node_media_ids = get_node_media_ids(
+                config,
+                row["node_id"],
+                media_use_tids=config[
+                    "update_media_by_node_media_use_tids"
+                ],
+                media_type=config["media_type"],
+            )
+            if len(node_media_ids) == 1:
+                return node_media_ids[0]
+            else:
+                if len(node_media_ids) == 0:
+                    message = f'No matching media on node {row["node_id"]} found.'
+                else:
+                    message = (f'Multiple matching media on node {row["node_id"]} found, with media IDs '
+                               f'{", ".join([str(x) for x in node_media_ids]).strip()}. Workbench can only update one media per node at a time.')
+                logging.warning(message)
+        return None
+
+    @staticmethod
+    def _get_csv_skip_row_ids(config: dict) -> list:
+        """Get the list of row IDs to skip from the config, if any."""
+        # If the value in config['csv_rows_to_process'] is a path to a file, skip rows not identified in the file.
+        ids_to_process = []
+        if (
+                "csv_rows_to_process" in config
+                and len(config["csv_rows_to_process"]) > 0
+                and isinstance(config["csv_rows_to_process"], str)
+        ):
+            if isinstance(config["csv_rows_to_process"], list):
+                ids_to_process = [str(x) for x in config["csv_rows_to_process"]]
+            elif isinstance(config["csv_rows_to_process"], str):
+                path_to_ids_file = os.path.abspath(config["csv_rows_to_process"])
+                if os.path.exists(path_to_ids_file):
+                    with open(path_to_ids_file) as fh:
+                        ids_to_process = fh.read().splitlines()
+                        ids_to_process = [x for x in ids_to_process if x]
+                else:
+                    message = f'File identified in the "csv_rows_to_process" config setting ({path_to_ids_file}) cannot be found.'
+                    raise FileNotFoundError(message)
+        return ids_to_process
+
+    def _generate_preprocessed_csv(self,
+            config: dict, csv_file_target: str = "node_fields", file_path: str = None
+    ) -> None:
+        """Read the input CSV data and prepare it for use in all tasks that use an input CSV file.
+
+        This function reads the source CSV file (or the CSV dump from Google Sheets or Excel),
+        applies some prepocessing to each CSV record (specifically, it adds any CSV field
+        templates that are registered in the config file, and it filters out any CSV
+        records or lines in the CSV file that begine with a #), and finally, writes out
+        a version of the CSV data to a file that appends .preprocessed to the input
+        CSV file name. It is this .preprocessed file that is used in create, update, etc.
+        tasks.
+        Parameters
+            ----------
+            config : dict
+                The configuration settings defined by workbench_config.get_config().
+            csv_file_target: string
+                Either 'node_fields' or 'taxonomy_fields'.
+            file_path: string
+                The path to the file to check (applies only to vocabulary CSVs).
+            Returns
+            -------
+             None
+        """
+        input_csv_path = self._get_source_file_path(config, csv_file_target, file_path)
+
+        if not os.path.exists(input_csv_path):
+            message = "CSV file " + input_csv_path + " not found."
+            logging.error(message)
+            sys.exit("Error: " + message)
+
+        try:
+            # 'utf-8-sig' encoding skips Microsoft BOM (0xef, 0xbb, 0xbf) at the start of files,
+            # e.g. exported from Excel and has no effect when reading standard UTF-8 encoded files.
+            with open(input_csv_path, "r", encoding="utf-8-sig", newline="") as csv_reader_file_handle:
+                # The CSV reader argument 'restval' is used to populate superfluous fields/labels.
+                csv_reader = csv.DictReader(
+                    csv_reader_file_handle,
+                    delimiter=config["delimiter"],
+                    restval="stringtopopulateextrafields",
+                )
+
+                # Unfinished (e.g. still need to apply this to creating taxonomies) WIP on #559.
+                if config["csv_headers"] == "labels" and config["task"] in [
+                    "create",
+                    "update",
+                    "create_terms",
+                    "update_terms",
+                ]:
+                    """
+                    if config['task'] == 'create_terms' or config['task'] == 'update_terms':
+                        field_map = get_fieldname_map(config, 'taxonomy_term', config['vocab_id'], 'labels')
+                    else:
+                        field_map = get_fieldname_map(config, 'node', config['content_type'], 'labels')
+                    """
+                    csv_reader_fieldnames = replace_field_labels_with_names(
+                        config, csv_reader.fieldnames
+                    )
+                else:
+                    csv_reader_fieldnames = list(csv_reader.fieldnames)
+
+                self._validate_field_names(config, csv_reader_fieldnames)
+
+                if config["task"] == "update_media_by_node":
+                    csv_reader_fieldnames.append("media_id")
+
+                #  Remove any columns the user has configured to ignore.
+                csv_reader_fieldnames = [
+                    x for x in csv_reader_fieldnames if x not in config["ignore_csv_columns"]
+                ]
+
+                #  If configured to do so, add "field_viewer_override" to output CSV so we can autopopulate the field_viewer_override column.
+                if config["task"] == "create" and (
+                        "field_viewer_override_extensions" in config
+                        or "field_viewer_override_models" in config
+                ) and "field_viewer_override" not in csv_reader_fieldnames:
+                    csv_reader_fieldnames.append("field_viewer_override")
+
+                # Common preprocessing tasks for the input CSV
+
+                # We subtract 1 from config['csv_start_row'] so user's expectation of the actual
+                # start row match up with Python's 0-based counting.
+                if config["csv_start_row"] > 0:
+                    csv_start_row = config["csv_start_row"] - 1
+                else:
+                    csv_start_row = config["csv_start_row"]
+
+                 # CSV field templates and CSV value templates currently apply only to node CSV files, not vocabulary CSV files.
+                tasks = ["create", "update", "add_media"]
+                is_create_update_add_media_or_run_scripts_task = (
+                        config["task"] in tasks and csv_file_target == "node_fields" or config["task"] == "run_scripts"
+                )
+
+                # If the value in config['csv_rows_to_process'] is a path to a file, skip rows not identified in the file.
+                if (
+                        is_create_update_add_media_or_run_scripts_task
+                ):
+                    try:
+                        ids_to_process = self._get_csv_skip_row_ids(config)
+                    except FileNotFoundError as e:
+                        logging.error(e.strerror)
+                        sys.exit("Error: " + e.strerror)
+
+                preprocessed_csv_path = self._get_csv_cache_path(config, csv_file_target, file_path)
+                # Open the preprocessed CSV file for writing, overwrite if it exists.
+                with open(preprocessed_csv_path, "w", newline="", encoding="utf-8") as csv_writer_file_handle:
+
+                    csv_writer = csv.DictWriter(
+                        csv_writer_file_handle,
+                        fieldnames=csv_reader_fieldnames,
+                        delimiter=config["delimiter"],
+                    )
+                    csv_writer.writeheader()
+                    row_num = 0
+
+                    unique_identifiers = []
+
+                    if is_create_update_add_media_or_run_scripts_task:
+                        # If the config file contains CSV field templates, append them to the CSV data.
+                        # Make a copy of the column headers so we can skip adding templates to the new CSV
+                        # if they're present in the source CSV. We don't want fields in the source CSV to be
+                        # stomped on by templates.
+                        csv_field_template_field_names = []
+                        if "csv_field_templates" in config:
+                            for template in config["csv_field_templates"]:
+                                for field_name, field_value in template.items():
+                                    if field_name not in csv_reader_fieldnames:
+                                        csv_reader_fieldnames.append(field_name)
+                                        csv_field_template_field_names.append(field_name)
+
+                        # Prepare any "csv_row_filters", which we apply to each row, below.
+                        if "csv_row_filters" in config and len(config["csv_row_filters"]) > 0:
+                            row_filters_is, row_filters_isnot = self._get_csv_row_filters(config)
+
+                        if config["task"] == "run_scripts":
+                            if config["run_scripts_entity_type"] == "node":
+                                config["id_field"] = "node_id"
+                            elif config["run_scripts_entity_type"] == "media":
+                                config["id_field"] = "media_id"
+                            elif config["run_scripts_entity_type"] == "term":
+                                config["id_field"] = "term_id"
+
+                    for row in itertools.islice(csv_reader, csv_start_row, config["csv_stop_row"]):
+                        row_num += 1
+
+                        # Skip CSV records whose first column begins with #.
+                        if str(row.values()[0]).strip().startswith("#"):
+                            # Use new instance variable instead of a global, this is only read once.
+                            self._commented_out_input_csv_rows_present = True
+                            continue
+
+                        # Remove columns specified in config['ignore_csv_columns'].
+                        if len(config["ignore_csv_columns"]) > 0:
+                            for column_to_ignore in config["ignore_csv_columns"]:
+                                if column_to_ignore in row:
+                                    del row[column_to_ignore]
+
+                        if "node_id" in row and value_is_numeric(row["node_id"]) is False:
+                            incoming_node_id = row["node_id"]
+                            row["node_id"] = get_nid_from_url_alias(config, row["node_id"])
+                            if config["task"] in [
+                                "update",
+                                "delete",
+                                "add_media",
+                                "delete_media_by_node",
+                                "update_media_by_node",
+                            ] and row["node_id"] is False:
+                                logging.warning(
+                                    f'URL "{incoming_node_id}" not found or is not accessible, skipping update.'
+                                )
+
+                        try:
+                            if row[config["id_field"]] not in ids_to_process:
+                                continue
+                        except UnboundLocalError:
+                            # If there is no csv_rows_to_process key in the config the ids_to_process would not be defined
+                            pass
+
+                        # Apply the "is" and "isnot" csv_row_filters defined above. If the field/value
+                        # combo is in the 'isnot' list, skip this row.
+                        try:
+                            filter_out_this_csv_row = False
+                            if len(row_filters_isnot) > 0:
+                                for filter_field, filter_values in row_filters_isnot.items():
+                                    if len(filter_values) > 0 and filter_field in row:
+                                        # Split out multiple field values to test each one.
+                                        values_in_row_field = [x.strip() for x in row[filter_field].split(
+                                            config["subdelimiter"]
+                                        )]
+                                        for value_in_row_field in values_in_row_field:
+                                            if value_in_row_field in filter_values:
+                                                filter_out_this_csv_row = True
+                                                break
+                                    if filter_out_this_csv_row is True:
+                                        # Need to break out from the outer loop too if we are skipping.
+                                        break
+                            if filter_out_this_csv_row is True:
+                                continue
+
+                            # If the field/value combo is not in the 'is' list, skip this row.
+                            if len(row_filters_is) > 0:
+                                for filter_field, filter_values in row_filters_is.items():
+                                    filter_out_this_csv_row = True  # Must match each filter or we skip
+                                    if len(filter_values) > 0 and filter_field in row:
+                                        # Split out multiple field values to test each one.
+                                        values_in_row_field = [ x.strip() for x in row[filter_field].split(
+                                            config["subdelimiter"]
+                                        )]
+                                        for value_in_row_field in values_in_row_field:
+                                            if value_in_row_field.strip() in filter_values:
+                                                filter_out_this_csv_row = False  # matched so we can proceed to the next filter
+                                                break
+                                if filter_out_this_csv_row is True:
+                                    continue
+                        except UnboundLocalError:
+                            # row_filters_is and row_filters_isnot might not have been defined, in which case we skip this.
+                            pass
+
+                        if "csv_field_templates" in config:
+                            for template in config["csv_field_templates"]:
+                                for field_name, field_value in template.items():
+                                    if field_name in csv_field_template_field_names:
+                                        # Only overwrite templates fields.
+                                        row[field_name] = field_value
+
+                        try:
+                            unique_identifiers.append(row[config["id_field"]])
+
+                            if (
+                                    "csv_value_templates" in config
+                                    and len(config["csv_value_templates"]) > 0
+                            ):
+                                row = apply_csv_value_templates(
+                                    config, "csv_value_templates", row
+                                )
+
+                            #  If configured to do so, populate field_viewer_override column.
+                            if config["task"] == "create" and (
+                                    "field_viewer_override_extensions" in config
+                                    or "field_viewer_override_models" in config
+                            ):
+                                row["field_viewer_override"] = (
+                                    get_field_viewer_override_from_condition(config, row)
+                                )
+                            if not is_create_update_add_media_or_run_scripts_task and config["task"] == "update_media_by_node":
+                                media_id = self.get_media_id(config, row)
+                                if media_id is not None:
+                                    row["media_id"] = media_id
+                                else:
+                                    continue
+
+                            row = clean_csv_values(config, row)
+                            csv_writer.writerow(row)
+                        except ValueError:
+                            # Note: this message is also generated in check_input().
+                            message = (
+                                    "Row "
+                                    + str(row_num)
+                                    + " (ID "
+                                    + row[config["id_field"]]
+                                    + ') of the CSV file "'
+                                    + input_csv_path
+                                    + '" '
+                                    + "has more columns ("
+                                    + str(len(row))
+                                    + ") than there are headers ("
+                                    + str(len(csv_reader.fieldnames))
+                                    + ")."
+                            )
+                            logging.error(message)
+                            print("Error: " + message)
+                            sys.exit(message)
+
+                    repeats = set(
+                        ([x for x in unique_identifiers if unique_identifiers.count(x) > 1])
+                    )
+                    if isinstance(repeats, set) and len(repeats) > 0:
+                        message = (
+                                "Duplicate identifiers in column "
+                                + config["id_field"]
+                                + " found: "
+                                + ",".join(repeats)
+                                + "."
+                        )
+                        logging.error(message)
+                        sys.exit("Error: " + message)
+
+        except UnicodeDecodeError:
+            message = (
+                    "Error: CSV file " + input_csv_path + " must be encoded in ASCII or UTF-8."
+            )
+            logging.error(message)
+            sys.exit(message)
+
+    def get_csv_data(self,
+                     config: dict, csv_file_target: str = "node_fields", file_path: str = None
+                     ) -> DictReader:
+        """Read and return the preprocessed CSV data, generating it only if necessary.
+        Parameters
+            :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
+            :param csv_file_target: string - Either 'node_fields' or 'taxonomy_fields'.
+            :param file_path: string - The path to the file to check (applies only to vocabulary CSVs).
+        Returns
+            :return: DictReader - The CSV DictReader object.
+        """
+        input_csv_path = self._get_source_file_path(config, csv_file_target, file_path)
+        preprocessed_csv_path = self._get_csv_cache_path(config, csv_file_target, file_path)
+        if not self._is_cache_valid(preprocessed_csv_path, input_csv_path):
+            self._generate_preprocessed_csv(config, csv_file_target, file_path)
+        if self._csv_file_handle:
+            self._csv_file_handle.close()
+        self._csv_file_handle = open(
+            preprocessed_csv_path, "r", encoding="utf-8"
+        )
+        preprocessed_csv_reader = csv.DictReader(
+            self._csv_file_handle,
+            delimiter=config["delimiter"],
+            restval="stringtopopulateextrafields",
+        )
+        return preprocessed_csv_reader
 
 
 def get_csv_data(
@@ -8629,7 +9233,8 @@ def validate_vocabulary_fields_in_csv(
         vocab_csv_file_path: string
             Location of vocabulary CSV file.
     """
-    csv_data = get_csv_data(config, "taxonomy_fields", vocab_csv_file_path)
+    csv_reader = WorkbenchCsvReader()
+    csv_data = csv_reader.get_csv_data(config, "taxonomy_fields", vocab_csv_file_path)
     csv_column_headers = copy.copy(csv_data.fieldnames)
 
     # Check whether each row contains the same number of columns as there are headers.
@@ -11590,7 +12195,8 @@ def csv_subset_warning(config: dict) -> None:
             return None
 
     if config["csv_start_row"] != 0 or config["csv_stop_row"] is not None:
-        csv_data = list(get_csv_data(config))
+        csv_reader = WorkbenchCsvReader()
+        csv_data = list(csv_reader.get_csv_data(config))
         start_row_id = csv_data[0][config["id_field"]]
         stop_row_id = csv_data[-1][config["id_field"]]
 
@@ -12041,10 +12647,11 @@ def generate_contact_sheet_from_csv(config: dict) -> None:
             logging.error(message + " " + str(e))
             sys.exit("Error: " + message + " See log for more detail.")
 
-    csv_data = get_csv_data(config)
+    csv_reader = WorkbenchCsvReader()
+    csv_data = csv_reader.get_csv_data(config)
 
     compound_items = list()
-    csv_data_to_get_children = get_csv_data(config)
+    csv_data_to_get_children = csv_reader.get_csv_data(config)
     if (
         config["paged_content_from_directories"] is True
         or config["paged_content_from_directories_parents_exist"] is True
