@@ -233,7 +233,8 @@ class WorkbenchExportBase:
 class CSVExporter(WorkbenchExportBase):
     def __init__(self, config, args=None):
         super().__init__(config, args)
-        self.csv_data = get_csv_data(config)
+        reader = WorkbenchCsvReader()
+        self.csv_data = reader.get_csv_data(config)
         self.required_fields = [
             "created",
             "changed",
