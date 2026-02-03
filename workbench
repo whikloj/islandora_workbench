@@ -85,9 +85,9 @@ def create():
     # csv_path = os.path.join(config["input_dir"], config["input_csv"])
     field_definitions = get_field_definitions(config, "node")
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
-    csv_column_headers = csv_data.fieldnames
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
+    csv_column_headers = csv_reader.get_field_names()
 
     if (
         "parent_id" in csv_column_headers
@@ -715,9 +715,9 @@ def update():
 
     field_definitions = get_field_definitions(config, "node")
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
-    csv_column_headers = csv_data.fieldnames
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
+    csv_column_headers = csv_reader.get_field_names()
 
     if config["log_term_creation"] is False:
         logging.info(
@@ -948,10 +948,10 @@ def delete():
     message = '"Delete" task started using config file ' + args.config + "."
     print(message)
     logging.info(message)
-    csv_reader = WorkbenchCsvReader()
+    csv_reader = WorkbenchCsvReader(config)
 
     if config["prompt_user_before_delete_task"] is True:
-        csv_data_to_count = csv_reader.get_csv_data(config)
+        csv_data_to_count = csv_reader.get_csv_data()
         num_nodes_to_delete = len(list(csv_data_to_count))
         if config["delete_media_with_nodes"] is True:
             delete_prompt = f"You are about to delete {num_nodes_to_delete} nodes and their attached media. Continue? (y/n) "
@@ -962,7 +962,7 @@ def delete():
             logging.info('Response to confirmation to delete was not "y", exiting.')
             sys.exit('You didn\'t respond "y", exiting.')
 
-    csv_data = csv_reader.get_csv_data(config)
+    csv_data = csv_reader.get_csv_data()
 
     row_count = 0
     for row in csv_data:
@@ -1060,12 +1060,12 @@ def add_media():
     print(message)
     logging.info(message)
 
-    csv_reader = WorkbenchCsvReader()
+    csv_reader = WorkbenchCsvReader(config)
 
-    csv_data_as_list = list(csv_reader.get_csv_data(config))
+    csv_data_as_list = list(csv_reader.get_csv_data())
     num_csv_records = len(csv_data_as_list)
 
-    csv_data = csv_reader.get_csv_data(config)
+    csv_data = csv_reader.get_csv_data()
 
     row_count = 0
     for row in csv_data:
@@ -1619,12 +1619,12 @@ def update_media() -> None:
         print(message)
         logging.info(message)
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
-    csv_column_headers = csv_data.fieldnames
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
+    csv_column_headers = csv_reader.get_field_names()
 
     if (
-        config["id_field"] not in csv_data.fieldnames
+        config["id_field"] not in csv_reader.get_field_names()
     ):  # If the CSV file does not contain the ID field, we use the media ID field by default
         config["id_field"] = "media_id"
 
@@ -2104,8 +2104,8 @@ def delete_media():
     print(message)
     logging.info(message)
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
 
     row_count = 0
     for row in csv_data:
@@ -2153,8 +2153,8 @@ def delete_media_by_node():
     )
     print(message)
     logging.info(message)
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
 
     row_count = 0
     for row in csv_data:
@@ -2569,8 +2569,8 @@ def add_update_alt_text():
     print(message)
     logging.info(message)
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
     csv_data_as_list = list(csv_data)
     num_csv_records = len(csv_data_as_list)
 
@@ -2686,9 +2686,9 @@ def create_terms():
         if os.path.exists(fieldname_map_cache_path):
             os.remove(fieldname_map_cache_path)
 
-    csv_reader = WorkbenchCsvReader()
+    csv_reader = WorkbenchCsvReader(config)
     if config["progress_bar"] is True:
-        csv_data_to_count = list(csv_reader.get_csv_data(config))
+        csv_data_to_count = list(csv_reader.get_csv_data())
         num_csv_records = len(csv_data_to_count)
         pbar = InitBar()
 
@@ -2698,11 +2698,11 @@ def create_terms():
     config["id_field"] = "term_name"
 
     # This is the CSV data for creating non-hierarchical or child terms.
-    csv_data = csv_reader.get_csv_data(config)
+    csv_data = csv_reader.get_csv_data()
 
     # We also need copies of the vocabulary CSV data for the parent checks.
-    is_parent_check_csv_data = csv_reader.get_csv_data(config)
-    parent_csv_data = csv_reader.get_csv_data(config)
+    is_parent_check_csv_data = csv_reader.get_csv_data()
+    parent_csv_data = csv_reader.get_csv_data()
 
     # First check for any terms that are designated as parents (i.e., they
     # are in the 'parent' column in at least one row).
@@ -2835,8 +2835,8 @@ def update_terms():
         config, "taxonomy_term", config["vocab_id"]
     )
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
     csv_column_headers = csv_data.fieldnames
 
     if config["log_term_creation"] is False:
@@ -3018,14 +3018,14 @@ def create_redirects():
     print(message)
     logging.info(message)
 
-    csv_reader = WorkbenchCsvReader()
+    csv_reader = WorkbenchCsvReader(config)
     if config["progress_bar"] is True:
-        csv_data_to_count = list(csv_reader.get_csv_data(config))
+        csv_data_to_count = list(csv_reader.get_csv_data())
         num_csv_records = len(csv_data_to_count)
         pbar = InitBar()
 
     # This is the CSV data for creating non-hierarchical or child terms.
-    csv_data = csv_reader.get_csv_data(config)
+    csv_data = csv_reader.get_csv_data()
 
     redirect_row_count = 0
     for row in csv_data:
@@ -3143,8 +3143,8 @@ def run_scripts():
     if config["run_scripts_entity_type"] == "term":
         id_field = "term_id"
 
-    csv_reader = WorkbenchCsvReader()
-    csv_data = csv_reader.get_csv_data(config)
+    csv_reader = WorkbenchCsvReader(config)
+    csv_data = csv_reader.get_csv_data()
 
     entity_ids = []
     for row in csv_data:
@@ -3274,7 +3274,7 @@ except Exception as e:
     )
     sys.exit(str(e))
 config = workbench_config.get_config()
-csv_reader = WorkbenchCsvReader()
+top_level_csv_reader = WorkbenchCsvReader(config)
 
 if config["remove_password_from_config_file"] is True:
     with open(config["config_file"], "r+") as config_file_to_remove_password_from_fh:
@@ -3432,7 +3432,7 @@ if (
 if "check" in config.keys():
     tasks_to_skip = ["create_from_files", "get_data_from_view"]
     if config["check"] is False and config["task"] not in tasks_to_skip:
-        csv_data_to_count = csv_reader.get_csv_data(config)
+        csv_data_to_count = top_level_csv_reader.get_csv_data()
         num_csv_records = len(list(csv_data_to_count))
         if num_csv_records == 0:
             zero_data_rows_message = (
@@ -3540,7 +3540,7 @@ if config["task"] in ["create", "create_from_files"]:
 # DictReader, so we read the CSV file, convert it to a list, and get its length.
 if config["progress_bar"] is True:
     if config["task"] != "create_from_files":
-        csv_data_as_list = list(csv_reader.get_csv_data(config))
+        csv_data_as_list = list(top_level_csv_reader.get_csv_data())
         num_csv_records = len(csv_data_as_list)
     pbar = InitBar()
 
