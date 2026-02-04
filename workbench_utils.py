@@ -6361,7 +6361,7 @@ class WorkbenchCsvReader:
         if len(duplicates) > 0:
             message = "Error: CSV has duplicate header names - " + ", ".join(duplicates)
             logging.error(message)
-            sys.exit(message)
+            raise WorkbenchCsvReaderException(message)
 
     def _get_csv_row_filters(self) -> Union[tuple[dict, dict], None]:
         """Get the CSV row filtering parameters from the config.
@@ -6531,15 +6531,14 @@ class WorkbenchCsvReader:
                     and self._csv_file_target == "node_fields"
                 ) or self._config["task"] == "run_scripts"
 
-                # If the value in config['csv_rows_to_process'] is a path to a file, skip rows not identified in the file.
                 if is_create_update_add_media_or_run_scripts_task:
+                    # If the value in config['csv_rows_to_process'] is a path to a file, skip rows not identified in the file.
                     try:
                         ids_to_process = self._get_csv_skip_row_ids()
                     except FileNotFoundError as e:
                         logging.error(e.strerror)
                         sys.exit("Error: " + e.strerror)
 
-                if is_create_update_add_media_or_run_scripts_task:
                     # If the config file contains CSV field templates, append them to the CSV data.
                     # Make a copy of the column headers so we can skip adding templates to the new CSV
                     # if they're present in the source CSV. We don't want fields in the source CSV to be
@@ -7129,7 +7128,6 @@ def get_csv_data(
                             row[field_name] = field_value
 
             # Skip CSV records whose first column begins with #.
-            # TODO: list() is redundant here, row.values() returns a list of values.
             if str(list(row.values())[0]).strip().startswith("#") is False:
                 # Skip row if the entity is not found.
                 if row[config["id_field"]] is False:
@@ -7238,7 +7236,6 @@ def get_csv_data(
                         del row[column_to_ignore]
 
             # Skip CSV records whose first column begins with #.
-            # TODO: list() is redundant here, row.values() returns a list of values.
             if str(list(row.values())[0]).strip().startswith("#") is False:
 
                 if "node_id" in row and value_is_numeric(row["node_id"]) is False:
