@@ -1793,7 +1793,6 @@ def check_input(config: dict, args: Namespace) -> None:
 
         # Check to see if there are any "host" column values in the CSV ID to node ID map that
         # aren't empty or the current config["host"] value.
-        check_for_parent_csv_data = csv_reader.get_csv_data()
         check_for_parent_csv_headers = csv_reader.get_field_names()
         # This is the set of conditions where the map is queried to get parent node IDs. AFAIK it's
         # complete but if others come up, they should be added here.
@@ -1858,6 +1857,9 @@ def check_input(config: dict, args: Namespace) -> None:
                     logging.info(
                         'No unexpected values in the CSV ID to node ID map\'s "host" column.'
                     )
+
+        # Check that the rollback configuration file and CSV file directories exist and are writable.
+        check_rollback_file_path_directories(config)
 
     # Check for presence of required config keys, which varies by task.
     if config["task"] == "create":
@@ -1934,10 +1936,6 @@ def check_input(config: dict, args: Namespace) -> None:
     message = "OK, configuration file has all required values (did not check for optional values)."
     print(message)
     logging.info(message)
-
-    # Check that the rollback configuration file and CSV file directories exist and are writable.
-    if config["task"] in ["create", "create_from_files"]:
-        check_rollback_file_path_directories(config)
 
     create_temp_dir(config)
 
@@ -2060,7 +2058,7 @@ def check_input(config: dict, args: Namespace) -> None:
         if os.path.exists(fieldname_map_cache_path):
             os.remove(fieldname_map_cache_path)
         csv_column_headers = replace_field_labels_with_names(
-            config, csv_data.fieldnames
+            config, csv_reader.get_field_names()
         )
     else:
         csv_column_headers = csv_reader.get_field_names()
@@ -2235,9 +2233,8 @@ def check_input(config: dict, args: Namespace) -> None:
                 workbench_execution_start_time
             )
         if "parent_id" in csv_column_headers:
-            validate_parent_ids_precede_children_csv_data = csv_reader.get_csv_data()
             validate_parent_ids_precede_children(
-                config, validate_parent_ids_precede_children_csv_data
+                config, csv_reader
             )
             prepare_csv_id_to_node_id_map(config)
             if config["query_csv_id_to_node_id_map_for_parents"] is True:
@@ -2712,7 +2709,7 @@ def check_input(config: dict, args: Namespace) -> None:
         required_fields_check_csv_data = csv_reader.get_csv_data()
         missing_fields = []
         for required_field in required_fields:
-            if required_field not in required_fields_check_csv_data.fieldnames:
+            if required_field not in csv_reader.get_field_names():
                 missing_fields.append(required_field)
         if len(missing_fields) > 0:
             message = (
@@ -2885,32 +2882,28 @@ def check_input(config: dict, args: Namespace) -> None:
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_edtf_fields(config, field_definitions, validate_edtf_values_csv_data)
 
-        validate_csv_field_cardinality_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_csv_field_cardinality(
-            config, field_definitions, validate_csv_field_cardinality_csv_data
+            config, field_definitions, csv_reader
         )
 
-        validate_csv_field_length_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_csv_field_length(
-            config, field_definitions, validate_csv_field_length_csv_data
+            config, field_definitions, csv_reader
         )
 
-        validate_taxonomy_field_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_taxo_terms = validate_taxonomy_field_values(
-            config, field_definitions, validate_taxonomy_field_csv_data
+            config, field_definitions, csv_reader
         )
         if warn_user_about_taxo_terms is True:
             print(
                 "Warning: Issues detected with validating taxonomy field values in the CSV file. See the log for more detail."
             )
 
-        validate_typed_relation_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_typed_relation_terms = validate_typed_relation_field_values(
-            config, field_definitions, validate_typed_relation_csv_data
+            config, field_definitions, csv_reader
         )
         if warn_user_about_typed_relation_terms is True:
             print(
@@ -2939,38 +2932,27 @@ def check_input(config: dict, args: Namespace) -> None:
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_edtf_fields(config, field_definitions, validate_edtf_values_csv_data)
 
-        validate_csv_field_cardinality_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_csv_field_cardinality(
-            config, field_definitions, validate_csv_field_cardinality_csv_data
-        )
+        validate_csv_field_cardinality(config, field_definitions, csv_reader)
 
-        validate_csv_field_length_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_csv_field_length(
-            config, field_definitions, validate_csv_field_length_csv_data
-        )
+        validate_csv_field_length(config, field_definitions, csv_reader)
 
-        validate_text_list_fields_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_text_list_fields(
-            config, field_definitions, validate_text_list_fields_data
-        )
+        validate_text_list_fields(config, field_definitions, csv_reader)
 
-        validate_taxonomy_field_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_taxo_terms = validate_taxonomy_field_values(
-            config, field_definitions, validate_taxonomy_field_csv_data
+            config, field_definitions, csv_reader
         )
         if warn_user_about_taxo_terms is True:
             print(
                 "Warning: Issues detected with validating taxonomy field values in the CSV file. See the log for more detail."
             )
 
-        validate_typed_relation_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         warn_user_about_typed_relation_terms = validate_typed_relation_field_values(
-            config, field_definitions, validate_typed_relation_csv_data
+            config, field_definitions, csv_reader
         )
         if warn_user_about_typed_relation_terms is True:
             print(
@@ -2981,9 +2963,8 @@ def check_input(config: dict, args: Namespace) -> None:
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
         validate_numeric_fields(config, field_definitions, validate_numeric_fields_data)
 
-        validate_media_track_csv_data = csv_reader.get_csv_data()
         # @todo: add the 'rows_with_missing_files' method of accumulating invalid values (issue 268).
-        validate_media_track_fields(config, validate_media_track_csv_data)
+        validate_media_track_fields(config, csv_reader)
 
         # Validate existence of nodes specified in 'field_member_of'. This could be generalized out to validate node IDs in other fields.
         # See https://github.com/mjordan/islandora_workbench/issues/90.
@@ -6262,9 +6243,7 @@ class WorkbenchCsvReader:
             :return: bool - True if commented out rows were present, False otherwise.
         """
         if not self._initialized:
-            raise WorkbenchCsvReaderException(
-                "WorkbenchCsvReader not initialized. Call get_csv_data() first."
-            )
+            self.get_csv_data()
         return self._commented_out_input_csv_rows_present
 
     def get_field_names(self) -> list:
@@ -6273,9 +6252,7 @@ class WorkbenchCsvReader:
             :return: list - The list of field names from the CSV header.
         """
         if not self._initialized:
-            raise WorkbenchCsvReaderException(
-                "WorkbenchCsvReader not initialized. Call get_csv_data() first."
-            )
+            self._run_preprocessing()
         return self._field_names
 
     @staticmethod
@@ -6778,13 +6755,8 @@ class WorkbenchCsvReader:
             logging.error(message)
             sys.exit(message)
 
-    def get_csv_data(
-        self,
-    ) -> Generator[dict[Union[str, Any], Union[str, Any]], Any, None]:
-        """Read and return the preprocessed CSV data, generating it only if necessary.
-        Returns
-            :return: Generator - A generator with the CSV Dict reader rows.
-        """
+    def _run_preprocessing(self) -> None:
+        """Run preprocessing to set field_names and commented_rows values."""
         input_csv_path = self._get_source_file_path()
         preprocessed_csv_path = self._get_csv_cache_path()
         if not self._is_cache_valid(preprocessed_csv_path, input_csv_path):
@@ -6792,11 +6764,24 @@ class WorkbenchCsvReader:
         self._initialized = True
         with open(preprocessed_csv_path, "r", encoding="utf-8") as csv_file_handle:
             preprocessed_csv_reader = csv.DictReader(
+                csv_file_handle, delimiter=self._config["delimiter"], restval="stringtopopulateextrafields", )
+            self._field_names = list(preprocessed_csv_reader.fieldnames)
+
+    def get_csv_data(
+        self,
+    ) -> Generator[dict[Union[str, Any], Union[str, Any]], Any, None]:
+        """Read and return the preprocessed CSV data, generating it only if necessary.
+        Returns
+            :return: Generator - A generator with the CSV Dict reader rows.
+        """
+        self._run_preprocessing()
+        preprocessed_csv_path = self._get_csv_cache_path()
+        with open(preprocessed_csv_path, "r", encoding="utf-8") as csv_file_handle:
+            preprocessed_csv_reader = csv.DictReader(
                 csv_file_handle,
                 delimiter=self._config["delimiter"],
                 restval="stringtopopulateextrafields",
             )
-            self._field_names = list(preprocessed_csv_reader.fieldnames)
             for row in preprocessed_csv_reader:
                 yield row
 
@@ -8194,7 +8179,7 @@ def validate_input_dir(config: dict) -> None:
 
 
 def validate_required_fields_have_values(
-    config: dict, required_drupal_fields: dict, csv_data: DictReader
+    config: dict, required_drupal_fields: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]
 ) -> None:
     """Loop through all fields in CSV to ensure that required field have a value in the CSV.
     Parameters
@@ -8218,7 +8203,7 @@ def validate_required_fields_have_values(
 
 
 def validate_csv_field_cardinality(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: WorkbenchCsvReader
 ) -> None:
     """Compare values in the CSV data with the fields' cardinality. Log CSV
     fields that have more values than allowed, and warn user if
@@ -8226,10 +8211,10 @@ def validate_csv_field_cardinality(
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     """
     field_cardinalities = dict()
-    csv_headers = csv_data.fieldnames
+    csv_headers = csv_data.get_field_names()
     for csv_header in csv_headers:
         if csv_header in field_definitions.keys():
             cardinality = field_definitions[csv_header]["cardinality"]
@@ -8237,7 +8222,7 @@ def validate_csv_field_cardinality(
             if int(cardinality) > 0:
                 field_cardinalities[csv_header] = cardinality
 
-    for count, row in enumerate(csv_data, start=1):
+    for count, row in enumerate(csv_data.get_csv_data(), start=1):
         for field_name in field_cardinalities.keys():
             if field_name in row:
                 # Don't check for the subdelimiter in title.
@@ -8305,17 +8290,17 @@ def validate_csv_field_cardinality(
 
 
 def validate_text_list_fields(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: WorkbenchCsvReader
 ) -> None:
     """For fields that are of "list_string" field type, check that values
     in CSV are in the field's "allowed_values" config setting.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     """
     list_field_allowed_values = dict()
-    csv_headers = csv_data.fieldnames
+    csv_headers = csv_data.get_field_names()
     for csv_header in csv_headers:
         if csv_header in field_definitions.keys():
             if "allowed_values" in field_definitions[csv_header]:
@@ -8324,7 +8309,7 @@ def validate_text_list_fields(
                         csv_header
                     ]["allowed_values"]
 
-    for count, row in enumerate(csv_data, start=1):
+    for count, row in enumerate(csv_data.get_csv_data(), start=1):
         for field_name in list_field_allowed_values.keys():
             if field_name in row and len(row[field_name]) > 0:
                 delimited_field_values = row[field_name].split(config["subdelimiter"])
@@ -8358,7 +8343,7 @@ def validate_text_list_fields(
 
 
 def validate_csv_field_length(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: WorkbenchCsvReader
 ) -> None:
     """Compare values in the CSV data with the fields' max_length. Log CSV
     fields that exceed their max_length, and warn user if
@@ -8366,10 +8351,10 @@ def validate_csv_field_length(
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     """
     field_max_lengths = dict()
-    csv_headers = csv_data.fieldnames
+    csv_headers = csv_data.get_field_names()
     for csv_header in csv_headers:
         if csv_header in field_definitions.keys():
             if "max_length" in field_definitions[csv_header]:
@@ -8378,7 +8363,7 @@ def validate_csv_field_length(
                 if max_length is not None:
                     field_max_lengths[csv_header] = max_length
 
-    for count, row in enumerate(csv_data, start=1):
+    for count, row in enumerate(csv_data.get_csv_data(), start=1):
         for field_name in field_max_lengths.keys():
             if field_name in row:
                 delimited_field_values = row[field_name].split(config["subdelimiter"])
@@ -8417,13 +8402,13 @@ def validate_csv_field_length(
 
 
 def validate_numeric_fields(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]
 ) -> None:
     """Validate integer, decimal, and float fields.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     numeric_fields_present = False
     for count, row in enumerate(csv_data, start=1):
@@ -8480,13 +8465,13 @@ def validate_numeric_fields(
 
 
 def validate_geolocation_fields(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]
 ) -> None:
     """Validate lat,long values in fields that are of type 'geolocation'.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     geolocation_fields_present = False
     for count, row in enumerate(csv_data, start=1):
@@ -8519,13 +8504,13 @@ def validate_geolocation_fields(
 
 
 def validate_link_fields(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]
 ) -> None:
     """Validate values in fields that are of type 'link'.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     link_fields_present = False
     for count, row in enumerate(csv_data, start=1):
@@ -8558,13 +8543,13 @@ def validate_link_fields(
 
 
 def validate_authority_link_fields(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]
 ) -> None:
     """Validate values in fields that are of type 'authority_link'.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     if config["task"] == "create_terms":
         config["id_field"] = "term_name"
@@ -8602,18 +8587,18 @@ def validate_authority_link_fields(
         logging.info(message)
 
 
-def validate_media_track_fields(config: dict, csv_data: DictReader) -> None:
+def validate_media_track_fields(config: dict, csv_data: WorkbenchCsvReader) -> None:
     """Validate values in fields that are of type 'media_track'.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     """
     media_track_fields_present = False
     # Must accommodate multiple media track fields in the same CSV (e.g. audio and video media in the
     # same CSV, each with its own track column). Therefore, we'll need to get the field definitions
     # for more than one media bundle.
     media_track_field_definitions = dict()
-    csv_column_headers = copy.copy(csv_data.fieldnames)
+    csv_column_headers = copy.copy(csv_data.get_field_names())
     for column_header in csv_column_headers:
         if column_header.startswith("media:"):
             # Assumes well-formed column headers.
@@ -8633,7 +8618,7 @@ def validate_media_track_fields(config: dict, csv_data: DictReader) -> None:
             media_track_field_definitions[media_bundle_name] = get_field_definitions(
                 config, "media", media_bundle_name
             )
-            for count, row in enumerate(csv_data, start=1):
+            for count, row in enumerate(csv_data.get_csv_data(), start=1):
                 for field_name in media_track_field_definitions[
                     media_bundle_name
                 ].keys():
@@ -8823,12 +8808,12 @@ def validate_term_name_length(
         sys.exit("Error: " + message + " See the Workbench log for more information.")
 
 
-def validate_node_created_date(config: dict, csv_data: DictReader) -> None:
+def validate_node_created_date(config: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]) -> None:
     """Checks that date_string is in the format used by Drupal's 'created' node property,
     e.g., 2020-11-15T23:49:22+00:00. Also check to see if the date is in the future.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     for count, row in enumerate(csv_data, start=1):
         for field_name, field_value in row.items():
@@ -8894,13 +8879,13 @@ def validate_weight_value(weight_value: str) -> bool:
 
 
 def validate_edtf_fields(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]
 ) -> None:
     """Validate values in fields that are of type 'edtf'.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     edtf_fields_present = False
     for count, row in enumerate(csv_data, start=1):
@@ -8987,11 +8972,11 @@ def validate_edtf_date(date: str) -> bool:
         return False
 
 
-def validate_url_aliases(config: dict, csv_data: DictReader) -> None:
+def validate_url_aliases(config: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]) -> None:
     """Checks that URL aliases don't already exist.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     for count, row in enumerate(csv_data, start=1):
         for field_name, field_value in row.items():
@@ -9025,12 +9010,12 @@ def validate_url_aliases(config: dict, csv_data: DictReader) -> None:
     logging.info(message)
 
 
-def validate_node_uid(config: dict, csv_data: DictReader) -> None:
+def validate_node_uid(config: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]) -> None:
     """Checks that the user identified in the 'uid' field exists in Drupal. Note that
     this does not validate any permissions the user may have.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     for count, row in enumerate(csv_data, start=1):
         for field_name, field_value in row.items():
@@ -9056,7 +9041,7 @@ def validate_node_uid(config: dict, csv_data: DictReader) -> None:
 
 
 def validate_parent_ids_precede_children(
-    config: dict, csv_data: DictReader
+    config: dict, csv_data: WorkbenchCsvReader
 ) -> Union[bool, None]:
     """In the page/child-level metadata method of creating compound content,
     CSV rows for parent items must come before their children in the CSV file.
@@ -9064,14 +9049,14 @@ def validate_parent_ids_precede_children(
     level of parent/child hierarchy (i.e., parents and their immediate children).
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     :return: Union[bool, None] - Returns False if there is no "parent_id" field in the CSV; otherwise returns nothing
     """
     positions = dict()
     id_field = config["id_field"]
     row_num = 0
-    if "parent_id" in csv_data.fieldnames:
-        for row in csv_data:
+    if "parent_id" in csv_data.get_field_names():
+        for row in csv_data.get_csv_data():
             row_num += 1
             positions[row[id_field]] = {
                 "position": row_num,
@@ -9094,14 +9079,15 @@ def validate_parent_ids_precede_children(
                 logging.error(message)
                 if config["perform_soft_checks"] is False:
                     sys.exit("Error: " + message)
+    return None
 
 
-def validate_parent_ids_in_csv_id_to_node_id_map(config: dict, csv_data: DictReader):
+def validate_parent_ids_in_csv_id_to_node_id_map(config: dict, csv_data: Generator[dict[Union[str, Any], Union[str, Any]], Any, None]):
     """Query the CSV ID to node ID map to check for non-unique parent IDs.
     If they exist, report out but do not exit.
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: Generator - The CSV data.
     """
     if (
         len(config["csv_id_to_node_id_map_allowed_hosts"]) > 0
@@ -9173,7 +9159,7 @@ def validate_parent_ids_in_csv_id_to_node_id_map(config: dict, csv_data: DictRea
 
 
 def validate_taxonomy_field_values(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: WorkbenchCsvReader
 ) -> Union[bool, None]:
     """Loop through all fields in field_definitions, and if a field
     is a taxonomy reference field, validate all values in the CSV
@@ -9183,7 +9169,7 @@ def validate_taxonomy_field_values(
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     :return: Union[bool, None] - Returns None if no taxonomy fields are present; otherwise returns False.
     """
     # Define a list to store names of CSV fields that reference vocabularies.
@@ -9191,7 +9177,7 @@ def validate_taxonomy_field_values(
     # TODO: vocab_validation_issues is set here and then used at the bottom but never changed, could just return False
     vocab_validation_issues = False
     # Get all the term IDs for vocabularies referenced in all fields in the CSV.
-    for column_name in csv_data.fieldnames:
+    for column_name in csv_data.get_field_names():
         if column_name in field_definitions:
             if (
                 field_definitions[column_name]["field_type"] == "entity_reference"
@@ -9221,7 +9207,7 @@ def validate_taxonomy_field_values(
 
     # Iterate through the CSV and validate each taxonomy field's values.
     new_term_names_in_csv_results = []
-    for count, row in enumerate(csv_data, start=1):
+    for count, row in enumerate(csv_data.get_csv_data(), start=1):
         for column_name in fields_with_vocabularies:
             if len(row[column_name]):
                 new_term_names_in_csv = validate_taxonomy_reference_value(
@@ -9370,7 +9356,7 @@ def validate_vocabulary_fields_in_csv(
     for field in field_definition_fieldnames:
         if (
             field_definitions[field]["required"] is True
-            and field not in csv_data.fieldnames
+            and field not in csv_column_headers
         ):
             message = (
                 'Required column "'
@@ -9403,7 +9389,7 @@ def validate_vocabulary_fields_in_csv(
 
 
 def validate_typed_relation_field_values(
-    config: dict, field_definitions: dict, csv_data: DictReader
+    config: dict, field_definitions: dict, csv_data: WorkbenchCsvReader
 ) -> Union[bool, None]:
     """Validate values in fields that are of type 'typed_relation'. Each CSV
     value must have this pattern: "string:string:int" or "string:string:string".
@@ -9412,7 +9398,7 @@ def validate_typed_relation_field_values(
     Parameters
     :param config: dict - The configuration settings defined by WorkbenchConfig.get_config().
     :param field_definitions: dict - The dictionary of field definitions.
-    :param csv_data: DictReader - The CSV data.
+    :param csv_data: WorkbenchCsvReader - The CSV data.
     :return: Union[bool, None] - Returns None if no typed relation fields are present; otherwise returns False.
     """
     # Define a list to store CSV field names that contain vocabularies.
@@ -9420,7 +9406,7 @@ def validate_typed_relation_field_values(
     # Get all the term IDs for vocabularies referenced in all fields in the CSV.
     # TODO: vocab_validation_issues is set here and then used at the bottom but never changed, could just return False
     vocab_validation_issues = False
-    for column_name in csv_data.fieldnames:
+    for column_name in csv_data.get_field_names():
         if column_name in field_definitions:
             if "vocabularies" in field_definitions[column_name]:
                 vocabularies = get_field_vocabularies(
@@ -9448,7 +9434,7 @@ def validate_typed_relation_field_values(
 
     typed_relation_fields_present = False
     new_term_names_in_csv_results = []
-    for count, row in enumerate(csv_data, start=1):
+    for count, row in enumerate(csv_data.get_csv_data(), start=1):
         for field_name in field_definitions.keys():
             if (
                 field_definitions[field_name]["field_type"] == "typed_relation"
@@ -12716,7 +12702,7 @@ def generate_contact_sheet_from_csv(config: dict) -> None:
     else:
         # Collect the IDs of items whose IDs are in other (child) items' "parent_id" column,
         # a.k.a. compound items created using the "With page/child-level metadata" method.
-        if "parent_id" in csv_data.fieldnames:
+        if "parent_id" in csv_reader.get_field_names():
             for get_children_row in csv_data_to_get_children:
                 compound_items.append(get_children_row["parent_id"])
 
