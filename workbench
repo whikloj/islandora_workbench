@@ -3,22 +3,13 @@
 # Usage: ./workbench --config config.yml --check
 # Usage: ./workbench --config config.yml
 
-import os
-import sys
-import copy
-import json
-import csv
-import logging
-import datetime
 import argparse
-import collections
-import subprocess
 import concurrent.futures
-import requests_cache
 from progress_bar import InitBar
 from rich.console import Console
 from rich.table import Table
-from ruamel.yaml import YAML
+
+from workbench_checks import check_input
 from workbench_utils import *
 import workbench_fields
 from WorkbenchConfig import WorkbenchConfig
