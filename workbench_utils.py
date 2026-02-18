@@ -1205,7 +1205,6 @@ def get_node_title_from_nid(config: dict, node_id: str) -> Union[str, bool]:
     else:
         return False
 
-
 def get_field_definitions(
     config: dict, entity_type: str, bundle_type: str = None
 ) -> dict:
@@ -1489,7 +1488,6 @@ def get_entity_fields(config: dict, entity_type: str, bundle_type: str) -> dict:
         sys.exit("Error: " + message + " See the log for more information.")
 
     return fields
-
 
 def get_required_bundle_fields(
     config: dict, entity_type: str, bundle_type: str
