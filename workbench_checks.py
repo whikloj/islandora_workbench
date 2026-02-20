@@ -764,11 +764,11 @@ def _task_specific_checks_update(config: dict, reader: workbench_utils.Workbench
     :param node_base_fields: list - the list of base node fields
     :param csv_column_headers: list - the list of CSV column headers
     """
-    print("in _task_specific_checks_update")
     if "node_id" not in csv_column_headers:
         message = ('For "update" tasks, your CSV file must contain a "node_id" column.')
         logging.error(message)
         sys.exit("Error: " + message)
+
     field_def_start = time.time()
     field_definitions = workbench_utils.get_field_definitions(config, "node")
     field_def_end = time.time()
