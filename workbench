@@ -848,25 +848,8 @@ def update():
                 config["host"] + "/node/" + str(row["node_id"]) + "?_format=json"
             )
             node_headers = {"Content-Type": "application/json"}
-            # Make a GET request to the content type
-            content_type_endpoint = f"{config['host']}/entity/node_type/{config['content_type']}?_format=json"
-            content_type_endpoint_response = issue_request(
-                config, "GET", content_type_endpoint
-            )
-            # See if revisions are enabled for the content type, if so create a new revision log message.
-            if content_type_endpoint_response.status_code == 200:
-                revisions_enabled = json.loads(content_type_endpoint_response.text)[
-                    "new_revision"
-                ]
-                if revisions_enabled:
-                    # Add revision information to node.
-                    revision_log_message = (
-                        row["revision_log"]
-                        if "revision_log" in row and row["revision_log"] != ""
-                        else "Updated by Islandora Workbench."
-                    )
-                    revision_json = {"revision_log": [{"value": revision_log_message}]}
-                    node.update(revision_json)
+            if "revision_log" in row.keys() and is_revisions_enabled(config, "node", config["content_type"]):
+                node.update(patch_revision_log_message("node", row["revision_log"]))
 
             node_response = issue_request(
                 config, "PATCH", node_endpoint, node_headers, node
@@ -1554,35 +1537,7 @@ def update_media() -> None:
         """
         return {"status": [{"value": status}]}
 
-    def is_revisions_enabled(config: dict, media_type: str):
-        """Return True if the media type has revisions enabled, False otherwise.
 
-        Parameters:
-            - config: The global configuration object.
-            - media_type: The media entity's type (e.g., 'image').
-
-        Returns:
-            True if the media type has revisions enabled, False otherwise.
-        """
-        media_type_endpoint = (
-            f"{config['host']}/entity/media_type/{media_type}?_format=json"
-        )
-        response = issue_request(config, "GET", media_type_endpoint)
-        if response.status_code == 200:
-            return json.loads(response.text)["new_revision"]
-        else:
-            return False
-
-    def patch_media_revision_log_message(revision_log_message) -> dict:
-        """Return the JSON object for a PATCH request required to patch the media entity's revision log message.
-
-        Parameters:
-            - revision_log_message: The revision log message.
-
-        Returns:
-            The JSON request for a PATCH request required to patch the media entity's revision log message.
-        """
-        return {"revision_log_message": [{"value": revision_log_message}]}
 
     # ========================================================= Main Logic =========================================================
 
@@ -1615,7 +1570,7 @@ def update_media() -> None:
     csv_column_headers = csv_reader.get_field_names()
 
     if (
-        config["id_field"] not in csv_reader.get_field_names()
+        config["id_field"] not in csv_column_headers
     ):  # If the CSV file does not contain the ID field, we use the media ID field by default
         config["id_field"] = "media_id"
 
@@ -2033,14 +1988,14 @@ def update_media() -> None:
                 continue
 
         # Update revision log message.
-        if is_revisions_enabled(config, media_type):
+        if is_revisions_enabled(config, "media", media_type):
             revision_log_message = (
                 row["revision_log"]
                 if "revision_log" in row and row["revision_log"] != ""
                 else "Updated by Islandora Workbench."
             )
             patch_request_json.update(
-                patch_media_revision_log_message(revision_log_message)
+                patch_revision_log_message("media", revision_log_message)
             )
 
         # Make the PATCH request.

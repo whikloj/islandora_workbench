@@ -7,6 +7,7 @@ import tempfile
 from argparse import Namespace
 from csv import DictReader
 import csv
+from functools import lru_cache
 from typing import OrderedDict, Union, Optional, Any, Generator
 
 import openpyxl
@@ -325,7 +326,7 @@ def issue_request(
                 stream=True if method in ["PUT", "POST", "PATCH"] else False,
             )
             request_elapsed = time.perf_counter() - request_start
-            print(f"HTTP {response.status_code} took {request_elapsed:.3f}s: {url}")
+            print(f"HTTP method ({method}) results in ({response.status_code}) took {request_elapsed:.3f}s: {url}")
 
             if config["log_response_status_code"] is True:
                 logging.info(response.status_code)
@@ -1188,13 +1189,20 @@ def get_node_title_from_nid(config: dict, node_id: str) -> Union[str, bool]:
 
 
 def cache_key(*args):
+    """Custom cache key function for get_field_definitions.
+    We want to cache field definitions by entity type and bundle, but because the bundle_type is not required means we
+    need to handle getting the content_type config key to construct the cache key.
+    Parameters
+    :param args: The arguments passed to get_field_definitions, which are config, entity_type, and optionally bundle_type.
+    Returns
+    :return: A cache key string constructed from the entity type and bundle type (or content type for nodes).
+    """
     if len(args) <= 1:
         raise ValueError("cache_key function requires at least 2 arguments to construct a cache key.")
     elif len(args) < 3 and args[1] == "node":
-        return hashkey(args[1], "default")
+        return hashkey(args[1], args[0]["content_type"])
     else:
         return hashkey(args[1], args[2])
-
 
 
 @cached(cache=LFUCache(maxsize=128), key=cache_key)
@@ -10181,7 +10189,7 @@ def get_config_file_identifier(config: dict) -> str:
     return config_file_id
 
 
-def calculate_response_time_trend(config: dict, response_time: int) -> Optional[float]:
+def calculate_response_time_trend(config: dict, response_time: Union[int, float]) -> Optional[float]:
     """Gets the average response time from the most recent 20 HTTP requests."""
     """Parameters
         ----------
@@ -11474,3 +11482,47 @@ def is_running_in_docker() -> bool:
         return True
     else:
         return False
+
+@cached(cache=LFUCache(maxsize=20), key=lambda config, entity_type, bundle: f"{entity_type}:{bundle}")
+def is_revisions_enabled(config: dict, entity_type: str, bundle: str):
+    """Return True if the entity/bundle type has revisions enabled, False otherwise.
+
+    Parameters:
+        :param config: dict - The global configuration object.
+        :param entity_type: str - The entity type (e.g., 'node', 'media').
+        :param bundle: str - The entity's type (e.g., 'islandora_object', 'image').
+
+    Returns:
+        True if the type has revisions enabled, False otherwise.
+    """
+    if entity_type not in ["node", "media"]:
+        logging.error(f"Invalid entity type {entity_type} passed to is_revisions_enabled function.")
+        return False
+    entity_type_str = "node_type" if entity_type == "node" else "media_type"
+    media_type_endpoint = (
+        f"{config['host']}/entity/{entity_type_str}/{bundle}?_format=json"
+    )
+    response = issue_request(config, "GET", media_type_endpoint)
+    try:
+        if response.status_code == 200:
+            return response.json()["new_revision"]
+        else:
+            return False
+    except requests.JSONDecodeError as e:
+        logging.error(f"Error decoding JSON response from {media_type_endpoint}: {e}")
+        return False
+
+def patch_revision_log_message(entity_type: str, revision_log_message: str) -> dict:
+    """Return the JSON object for a PATCH request required to patch the entity's revision log message.
+
+    Parameters:
+        :param entity_type: str - The entity type (e.g., 'node', 'media').
+        :param revision_log_message: str - The revision log message.
+
+    Returns:
+        The JSON request for a PATCH request required to patch the entity's revision log message.
+    """
+    if "entity_type" not in ["node", "media"]:
+        logging.error(f"Invalid entity type ({entity_type}) passed to patch_media_revision_log_message function.")
+    revision_log_message_key = "revision_log" if entity_type == "node" else "revision_log_message"
+    return {revision_log_message_key: [{"value": revision_log_message}]}
