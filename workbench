@@ -9,6 +9,7 @@ from progress_bar import InitBar
 from rich.console import Console
 from rich.table import Table
 
+import workbench_utils
 from workbench_checks import check_input
 from workbench_utils import *
 import workbench_fields
@@ -687,13 +688,7 @@ def update():
     to include the existing value(s) in our PATCH. The field classes take
     care of preserving existing values in 'append' updates.
     """
-    message = (
-        '"Update" ('
-        + config["update_mode"]
-        + ") task started using config file "
-        + args.config
-        + "."
-    )
+    message = f'"Update" ({config["update_mode"]}) task started using config file {args.config}.'
     print(message)
     logging.info(message)
 
@@ -725,10 +720,8 @@ def update():
             requests_cache.delete(expired=True)
 
         node_id_to_ping = copy.copy(row["node_id"])
-        if not value_is_numeric(node_id_to_ping):
-            node_id_to_ping = get_nid_from_url_alias(config, node_id_to_ping)
         node_ping_result = ping_node(config, node_id_to_ping, "GET", True)
-        if node_id_to_ping is False or node_ping_result is False:
+        if node_ping_result is False:
             if config["progress_bar"] is False:
                 print(
                     "Node "
@@ -745,7 +738,7 @@ def update():
         # Add the target_id field.
         node = {"type": [{"target_id": config["content_type"]}]}
 
-        node_field_values = get_node_field_values(config, row["node_id"])
+        node_field_values = json.loads(node_ping_result)
 
         # Some optional node base fields.
         if "uid" in csv_column_headers:
@@ -776,11 +769,11 @@ def update():
             # If node doesn't have the field, log that fact and skip updating the field.
             reserved_fields = ["published", "url_alias"]
             if (
-                custom_field not in json.loads(node_ping_result)
+                custom_field not in node_field_values.keys()
                 and custom_field not in reserved_fields
             ):
                 message = f'Node {row["node_id"]} does not have a "{custom_field}" field, skipping update.'
-                print(f"ERROR: " + message)
+                print(f"ERROR: {message}")
                 logging.warning(message)
                 node_has_all_fields = False
                 break
@@ -793,39 +786,28 @@ def update():
                     continue
 
             # 'url_alias' is a reserved CSV field.
-            if custom_field == "url_alias":
-                continue
-
             # 'image_alt_text' is a reserved CSV field.
             # Issue to add alt text in update task is https://github.com/mjordan/islandora_workbench/issues/166.
-            if custom_field == "image_alt_text":
-                continue
-
             # 'langcode' is a core Drupal field, but is not considered a base field.
-            if custom_field == "langcode":
-                continue
-
             # 'created' is a base field.
-            if custom_field == "created":
-                continue
-
             # 'published' is a reserved CSV field.
-            if custom_field == "published":
-                continue
-
             # 'uid' is a base field.
-            if custom_field == "uid":
-                continue
-
             # 'promote' is a base field.
-            if custom_field == "promote":
+            base_fields = [
+                "url_alias",
+                "image_alt_text",
+                "langcode",
+                "created",
+                "published",
+                "uid",
+                "promote",
+                "revision_log",
+            ]
+            if custom_field in base_fields:
                 continue
 
             if "preprocessors" in config and custom_field in config["preprocessors"]:
                 row[custom_field] = preprocess_csv(config, row, custom_field)
-
-            if custom_field == "revision_log":
-                continue
 
             # Assemble Drupal field structures from CSV data. If new field types are added to
             # workbench_fields.py, they need to be registered in the following if/elif/else block.
@@ -848,7 +830,9 @@ def update():
                 config["host"] + "/node/" + str(row["node_id"]) + "?_format=json"
             )
             node_headers = {"Content-Type": "application/json"}
-            if "revision_log" in row.keys() and is_revisions_enabled(config, "node", config["content_type"]):
+            if "revision_log" in row.keys() and is_revisions_enabled(
+                config, "node", config["content_type"]
+            ):
                 node.update(patch_revision_log_message("node", row["revision_log"]))
 
             node_response = issue_request(
@@ -869,11 +853,7 @@ def update():
             else:
                 if config["progress_bar"] is False:
                     print(
-                        "Error: Node "
-                        + config["host"]
-                        + "/node/"
-                        + str(row["node_id"])
-                        + " not updated. See log for more detail."
+                        f"Error: Node {config['host']}/node/{row['node_id']} not updated. See log for more detail."
                     )
                 logging.error(
                     "Node %s not updated (server response code was '%s').",
@@ -1536,8 +1516,6 @@ def update_media() -> None:
             The JSON request for a PATCH request required to patch the media entity's "Published" status, or None if the status is not a boolean.
         """
         return {"status": [{"value": status}]}
-
-
 
     # ========================================================= Main Logic =========================================================
 
@@ -3200,7 +3178,6 @@ parser.add_argument(
     "--recovery_mode_starting_from_node_id",
     help="Overrides the 'recovery_mode_starting_from_node_id' configuration setting.",
 )
-
 
 parser.add_argument("--version", action="version", version="Islandora Workbench 0.0.0")
 args = parser.parse_args()
