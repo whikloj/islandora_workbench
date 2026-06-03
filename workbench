@@ -3080,12 +3080,16 @@ def create_redirects():
 
         # Check to see if the redirect source value is already a redirect. We don't use issue_request()
         # since we don't want to override config["allow_redirects"] for this one request.
-        is_redirect_url = config["host"].rstrip("/") + "/" + row["redirect_source"]
-        is_redirect_response = requests.head(
+        is_redirect_url = "/" + row["redirect_source"]
+        is_redirect_response = issue_request(
+            config,
+            "HEAD",
             is_redirect_url,
-            allow_redirects=False,
-            verify=config["secure_ssl_only"],
-            auth=(config["username"], config["password"]),
+            None,
+            None,
+            None,
+            None,
+            {"allow_redirects": False}
         )
         if str(is_redirect_response.status_code).startswith("30"):
             message = (

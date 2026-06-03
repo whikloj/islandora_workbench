@@ -226,10 +226,11 @@ def issue_request(
     config: dict,
     method: str,
     path: str,
-    headers: dict = None,
-    json_data: dict = None,
-    data: str = None,
-    query: dict = None,
+    headers: Union[dict, None] = None,
+    json_data: Union[dict, None] = None,
+    data: Union[str, None] = None,
+    query: Union[dict, None] = None,
+    config_override: Union[dict, None] = None,
 ) -> requests.Response:
     """Issue the HTTP request to Drupal. Note: calls to non-Drupal URLs
     do not use this function.
@@ -250,25 +251,32 @@ def issue_request(
         Data to be sent in request body.
     query : dict, optional
         Request parameters sent as a dict.
+    config_override : dict, optional
+        A dict with config settings that will temporarily override the main config for this request.
 
     Returns
     -------
     requests.Response
     """
+    local_config = copy.deepcopy(config)
+    if config_override is not None:
+        for key, value in config_override:
+            local_config[key] = value
+
     with requests.Session() as session:
         retries = Retry(
-            total=config["http_max_retries"],
-            backoff_factor=config["http_backoff_factor"],
-            status_forcelist=config["http_retry_on_status_codes"],
-            allowed_methods=config["http_retry_allowed_methods"],
+            total=local_config["http_max_retries"],
+            backoff_factor=local_config["http_backoff_factor"],
+            status_forcelist=local_config["http_retry_on_status_codes"],
+            allowed_methods=local_config["http_retry_allowed_methods"],
         )
         session.mount("http://", HTTPAdapter(max_retries=retries))
         session.mount("https://", HTTPAdapter(max_retries=retries))
         try:
-            if config["secure_ssl_only"] is False:
+            if local_config["secure_ssl_only"] is False:
                 requests.packages.urllib3.disable_warnings()
 
-            if not config["password"]:
+            if not local_config["password"]:
                 message = (
                     'Password for Drupal user not found. Please add the "password" option to your configuration '
                     + "file or provide the Drupal user's password in your ISLANDORA_WORKBENCH_PASSWORD environment variable."
@@ -276,13 +284,13 @@ def issue_request(
                 logging.error(message)
                 sys.exit("Error: " + message)
 
-            if config["check"] is False:
+            if local_config["check"] is False:
                 if (
-                    "pause" in config
+                    "pause" in local_config
                     # and method in ["POST", "PUT", "PATCH", "DELETE"]
-                    and value_is_numeric(config["pause"])
+                    and value_is_numeric(local_config["pause"])
                 ):
-                    time.sleep(int(config["pause"]))
+                    time.sleep(int(local_config["pause"]))
 
             if headers is None:
                 headers = dict()
@@ -290,32 +298,32 @@ def issue_request(
             if query is None:
                 query = dict()
 
-            headers.update({"User-Agent": config["user_agent"]})
+            headers.update({"User-Agent": local_config["user_agent"]})
 
             # The trailing / is stripped in config, but we do it here too, just in case.
-            config["host"] = config["host"].rstrip("/")
-            if config["host"] in path:
+            local_config["host"] = local_config["host"].rstrip("/")
+            if local_config["host"] in path:
                 url = path
             else:
                 # Since we remove the trailing / from the hostname, we need to ensure
                 # that there is a / separating the host from the path.
                 if not path.startswith("/"):
                     path = "/" + path
-                url = config["host"] + path
+                url = local_config["host"] + path
 
-            if config["log_request_url"] is True:
+            if local_config["log_request_url"] is True:
                 logging.info(method + " " + url)
 
-            if config["log_headers"] is True:
+            if local_config["log_headers"] is True:
                 logging.info(headers)
-            if json_data is not None and config["log_json"] is True:
+            if json_data is not None and local_config["log_json"] is True:
                 log_json(json_data)
             response = session.request(
                 method,
                 url,
-                allow_redirects=config["allow_redirects"],
-                verify=config["secure_ssl_only"],
-                auth=(config["username"], config["password"]),
+                allow_redirects=local_config["allow_redirects"],
+                verify=local_config["secure_ssl_only"],
+                auth=(local_config["username"], local_config["password"]),
                 headers=headers,
                 json=json_data,
                 data=data,
@@ -323,38 +331,38 @@ def issue_request(
                 stream=True if method in ["PUT", "POST", "PATCH"] else False,
             )
 
-            if config["log_response_status_code"] is True:
+            if local_config["log_response_status_code"] is True:
                 logging.info(response.status_code)
 
-            if config["log_response_body"] is True:
+            if local_config["log_response_body"] is True:
                 logging.info(response.text)
 
             response_time = response.elapsed.total_seconds()
-            average_response_time = calculate_response_time_trend(config, response_time)
+            average_response_time = calculate_response_time_trend(local_config, response_time)
 
-            log_response_time_value = copy.copy(config["log_response_time"])
-            if "adaptive_pause" in config and value_is_numeric(
-                config["adaptive_pause"]
+            log_response_time_value = copy.copy(local_config["log_response_time"])
+            if "adaptive_pause" in local_config and value_is_numeric(
+                local_config["adaptive_pause"]
             ):
                 # Pause defined in config['adaptive_pause'] is included in the response time,
                 # so we subtract it to get the "unpaused" response time.
                 if average_response_time is not None and (
-                    response_time - int(config["adaptive_pause"])
-                ) > (average_response_time * int(config["adaptive_pause_threshold"])):
+                    response_time - int(local_config["adaptive_pause"])
+                ) > (average_response_time * int(local_config["adaptive_pause_threshold"])):
                     message = (
                         "HTTP requests paused for "
-                        + str(config["adaptive_pause"])
+                        + str(local_config["adaptive_pause"])
                         + " seconds because request in next log entry "
                         + "exceeded adaptive threshold of "
-                        + str(config["adaptive_pause_threshold"])
+                        + str(local_config["adaptive_pause_threshold"])
                         + "."
                     )
-                    time.sleep(int(config["adaptive_pause"]))
+                    time.sleep(int(local_config["adaptive_pause"]))
                     logging.info(message)
                     # Enable response time logging if we surpass the adaptive pause threashold.
-                    config["log_response_time"] = True
+                    local_config["log_response_time"] = True
 
-            if config["log_response_time"] is True:
+            if local_config["log_response_time"] is True:
                 parsed_query_string = urllib.parse.urlparse(url).query
                 if len(parsed_query_string):
                     url_for_logging = (
@@ -362,10 +370,10 @@ def issue_request(
                     )
                 else:
                     url_for_logging = urllib.parse.urlparse(url).path
-                if "adaptive_pause" in config and value_is_numeric(
-                    config["adaptive_pause"]
+                if "adaptive_pause" in local_config and value_is_numeric(
+                    local_config["adaptive_pause"]
                 ):
-                    response_time = response_time - int(config["adaptive_pause"])
+                    response_time = response_time - int(local_config["adaptive_pause"])
                 response_time_trend_entry = {
                     "method": method,
                     "response": response.status_code,
@@ -375,7 +383,7 @@ def issue_request(
                 }
                 logging.info(response_time_trend_entry)
                 # Set this config option back to what it was before we updated in above.
-                config["log_response_time"] = log_response_time_value
+                local_config["log_response_time"] = log_response_time_value
             return response
         except (
             requests.exceptions.Timeout,
@@ -386,7 +394,7 @@ def issue_request(
                 "timed out"
                 if isinstance(error, requests.exceptions.Timeout)
                 else (
-                    f'could not connect to {config["host"]}'
+                    f'could not connect to {local_config["host"]}'
                     if isinstance(error, requests.exceptions.ConnectionError)
                     else "encountered an exception"
                 )
