@@ -360,51 +360,69 @@ def task_specific_checks(
 def _generate_geolocation_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    # Generate a list of geolocation fields that are present in the CSV file.
-    return [
-        key
-        for key, val in field_definitions.items()
-        if val["field_type"] == "geolocation" and key in field_names_in_csv
-    ]
+    """ Generate a list of geolocation fields that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param field_names_in_csv: list - the list of field names in the CSV file
+    """
+    return _generate_general_field_lists(field_definitions, field_names_in_csv, "geolocation")
 
 
 def _generate_link_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    # Generate a list of link fields that are present in the CSV file.
-    return [
-        key
-        for key, val in field_definitions.items()
-        if val["field_type"] == "link" and key in field_names_in_csv
-    ]
+    """ Generate a list of link fields that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param field_names_in_csv: list - the list of field names in the CSV file
+    """
+    return _generate_general_field_lists(field_definitions, field_names_in_csv, "link")
 
 
 def _generate_authority_link_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    # Generate a list of authority link fields that are present in the CSV file.
-    return [
-        key
-        for key, val in field_definitions.items()
-        if val["field_type"] == "authority_link" and key in field_names_in_csv
-    ]
+    """ Generate a list of authority link fields that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param field_names_in_csv: list - the list of field names in the CSV file
+    """
+    return _generate_general_field_lists(field_definitions, field_names_in_csv, "authority_link")
 
 
 def _generate_edtf_field_lists(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    # Generate a list of EDTF fields that are present in the CSV file.
+    """ Generate a list of EDTF fields that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param field_names_in_csv: list - the list of field names in the CSV file
+    """
+    return _generate_general_field_lists(field_definitions, field_names_in_csv, "edtf")
+
+def _generate_general_field_lists(
+    field_definitions: dict, field_names_in_csv: list, field_type: str
+) -> list:
+    """ Generate a list of fields of a specific type that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param field_names_in_csv: list - the list of field names in the CSV file
+    :param field_type: str - the field type to filter by (e.g., "authority_link", "edtf")
+    """
     return [
         key
         for key, val in field_definitions.items()
-        if val["field_type"] == "edtf" and key in field_names_in_csv
+        if val["field_type"] == field_type and key in field_names_in_csv
     ]
-
 
 def _generate_cardinality_field_list(
     field_definitions: dict, csv_column_headers: list
 ) -> dict:
-    # Generate a list of fields with cardinality >= 1 that are present in the CSV file.
+    """ Generate a list of fields with cardinality >= 1 that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    """
     return {
         key: field_definitions[key]["cardinality"]
         for key in csv_column_headers
@@ -417,7 +435,11 @@ def _generate_cardinality_field_list(
 def _generate_taxonomy_term_reference_field_list(
     field_definitions: dict, csv_column_headers: list
 ) -> list:
-    # Generate a list of taxonomy term reference fields that are present in the CSV file.
+    """ Generate a list of taxonomy term reference fields that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    """
     return [
         key
         for key, val in field_definitions.items()
@@ -430,7 +452,11 @@ def _generate_taxonomy_term_reference_field_list(
 def _generate_typed_relation_field_list(
     field_definitions: dict, csv_column_headers: list
 ) -> list:
-    # Generate a list of typed relation reference fields that are present in the CSV file.
+    """ Generate a list of typed relation reference fields that are present in the CSV file.
+    Parameters:
+    :param field_definitions: dict - the field definitions from Drupal
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    """
     return [
         key
         for key, val in field_definitions.items()
