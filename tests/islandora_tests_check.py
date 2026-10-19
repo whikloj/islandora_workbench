@@ -49,7 +49,11 @@ class TestFailToConnect(WorkbenchTest):
         except subprocess.CalledProcessError as err:
             pass
         finally:
-            cleanup_paths(config_file_path)
+            cleanup_paths(
+                config_file_path,
+                os.path.join(tempfile.gettempdir(), "metadata.csv.preprocessed"),
+                os.path.join(tempfile.gettempdir(), "metadata.csv.preprocessed.hash")
+            )
 
 
 class TestCreateCheck(WorkbenchTest):
@@ -70,7 +74,11 @@ class TestCreateCheck(WorkbenchTest):
         try:
             assert re.search("Configuration and input data appear to be valid", output)
         finally:
-            cleanup_paths(config_file_path)
+            cleanup_paths(
+                config_file_path,
+                os.path.join(tempfile.gettempdir(), "metadata.csv.preprocessed"),
+                os.path.join(tempfile.gettempdir(), "metadata.csv.preprocessed.hash")
+            )
 
 
 @unittest.skipIf(
@@ -104,6 +112,7 @@ class TestCheckFromGoogleSpreadsheetCheck(WorkbenchTest):
         cleanup_paths(
             os.path.join(self.temp_dir, "google_sheet.csv"),
             os.path.join(self.temp_dir, "google_sheet.csv.preprocessed"),
+            os.path.join(self.temp_dir, "google_sheet.csv.preprocessed.hash"),
         )
 
     def test_create_from_google_spreadsheet_check(
@@ -181,6 +190,7 @@ class TestUpdateCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "update.csv.preprocessed"),
+                os.path.join(self.temp_dir, "update.csv.preprocessed.hash"),
             )
 
 
@@ -205,6 +215,7 @@ class TestDeleteCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "delete.csv.preprocessed"),
+                os.path.join(self.temp_dir, "delete.csv.preprocessed.hash"),
             )
 
 
@@ -230,6 +241,7 @@ class TestAddMediaCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "add_media.csv.preprocessed"),
+                os.path.join(self.temp_dir, "add_media.csv.preprocessed.hash"),
             )
 
 
@@ -269,6 +281,9 @@ class TestCreateMaxNodeTitleLengthCheck(WorkbenchTest):
                 config_file_path,
                 os.path.join(
                     self.temp_dir, "create_max_node_title_length.csv.preprocessed"
+                ),
+                os.path.join(
+                    self.temp_dir, "create_max_node_title_length.csv.preprocessed.hash"
                 ),
             )
 
@@ -358,7 +373,13 @@ class TestUpdateWithMaxNodeTitleLengthCheck(WorkbenchTest):
                 self.temp_dir, "create_max_node_title_length.csv.preprocessed"
             ),
             os.path.join(
+                self.temp_dir, "create_max_node_title_length.csv.preprocessed.hash"
+            ),
+            os.path.join(
                 self.temp_dir, "update_max_node_title_length.csv.preprocessed"
+            ),
+            os.path.join(
+                self.temp_dir, "update_max_node_title_length.csv.preprocessed.hash"
             ),
         )
 
@@ -426,6 +447,7 @@ class TestTypedRelationBadRelatorCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "bad_typed_relation_fail.csv.preprocessed"),
+                os.path.join(self.temp_dir, "bad_typed_relation_fail.csv.preprocessed.hash"),
                 os.path.join(
                     self.current_dir,
                     "assets",
@@ -461,6 +483,7 @@ class TestTypedRelationBadUriCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "bad_uri_fail.csv.preprocessed"),
+                os.path.join(self.temp_dir, "bad_uri_fail.csv.preprocessed.hash"),
                 os.path.join(
                     self.current_dir,
                     "assets",
@@ -495,6 +518,7 @@ class TestTypedRelationNewTypedRelationCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "new_typed_relation.csv.preprocessed"),
+                os.path.join(self.temp_dir, "new_typed_relation.csv.preprocessed.hash"),
                 os.path.join(
                     self.current_dir,
                     "assets",
@@ -531,6 +555,7 @@ class TestTypedRelationNoNamespaceCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "no_namespace.csv.preprocessed"),
+                os.path.join(self.temp_dir, "no_namespace.csv.preprocessed.hash"),
                 os.path.join(
                     self.current_dir,
                     "assets",
@@ -567,6 +592,7 @@ class TestDelimiterCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "metadata.tsv.preprocessed"),
+                os.path.join(self.temp_dir, "metadata.tsv.preprocessed.hash"),
             )
 
 
@@ -595,6 +621,7 @@ class TestGeolocationCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "bad_geocoorindates_fail.csv.preprocessed"),
+                os.path.join(self.temp_dir, "bad_geocoorindates_fail.csv.preprocessed.hash"),
             )
 
 
@@ -622,6 +649,7 @@ class TestHeaderColumnMismatchCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "metadata.csv.preprocessed"),
+                os.path.join(self.temp_dir, "metadata.csv.preprocessed.hash"),
                 os.path.join(
                     self.current_dir,
                     "assets",
@@ -661,6 +689,7 @@ class TestCreateWithFieldTemplatesCheck(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "metadata.csv.preprocessed"),
+                os.path.join(self.temp_dir, "metadata.csv.preprocessed.hash"),
             )
 
 
@@ -749,8 +778,11 @@ class TestTaxonomies(WorkbenchTest):
         cleanup_paths(
             taxonomies_config_file_path,
             os.path.join(self.temp_dir, "metadata.csv.preprocessed"),
+            os.path.join(self.temp_dir, "metadata.csv.preprocessed.hash"),
             os.path.join(self.temp_dir, "term_id_not_in_taxonomy.csv.preprocessed"),
+            os.path.join(self.temp_dir, "term_id_not_in_taxonomy.csv.preprocessed.hash"),
             os.path.join(self.temp_dir, "term_name_not_in_taxonomy.csv.preprocessed"),
+            os.path.join(self.temp_dir, "term_name_not_in_taxonomy.csv.preprocessed.hash"),
             os.path.join(self.current_dir, "assets", "taxonomies_test", "rollback.csv"),
         )
 
@@ -775,12 +807,13 @@ class TestTaxonomies(WorkbenchTest):
         ]
         output = subprocess.check_output(cmd, cwd=self.workbench_dir)
         output = output.decode().strip()
-        cleanup_paths(config_file_path)
-
-        assert re.search(
-            "term IDs/names in CSV file exist in their respective taxonomies",
-            output,
-        )
+        try:
+            assert re.search(
+                "term IDs/names in CSV file exist in their respective taxonomies",
+                output,
+            )
+        finally:
+            cleanup_paths(config_file_path)
 
     def test_validate_term_name_does_not_exist(self, taxonomy_setup, workbench_user):
         configuration = {
@@ -808,9 +841,10 @@ class TestTaxonomies(WorkbenchTest):
             cwd=self.workbench_dir,
         )
         stdout, stderr = proc.communicate()
-        cleanup_paths(config_file_path)
-
-        assert re.search('"XPosters"', str(stdout))
+        try:
+            assert re.search('"XPosters"', str(stdout))
+        finally:
+            cleanup_paths(config_file_path)
 
     def test_validate_term_id_does_not_exist(self, taxonomy_setup, workbench_user):
         configuration = {
@@ -838,9 +872,10 @@ class TestTaxonomies(WorkbenchTest):
             cwd=self.workbench_dir,
         )
         stdout, stderr = proc.communicate()
-        cleanup_paths(config_file_path)
-
-        assert re.search("1000000", str(stdout))
+        try:
+            assert re.search("1000000", str(stdout))
+        finally:
+            cleanup_paths(config_file_path)
 
 
 class TestParentsPrecedeChildren(WorkbenchTest):
@@ -864,7 +899,9 @@ class TestParentsPrecedeChildren(WorkbenchTest):
             assert re.search("Configuration and input data appear to be valid", output)
         finally:
             cleanup_paths(
-                config_file_path, os.path.join(self.temp_dir, "good.csv.preprocessed")
+                config_file_path,
+                os.path.join(self.temp_dir, "good.csv.preprocessed"),
+                os.path.join(self.temp_dir, "good.csv.preprocessed.hash"),
             )
 
     def test_bad_csv(self, workbench_user):
@@ -892,6 +929,7 @@ class TestParentsPrecedeChildren(WorkbenchTest):
             cleanup_paths(
                 config_file_path,
                 os.path.join(self.temp_dir, "bad.csv.preprocessed"),
+                os.path.join(self.temp_dir, "bad.csv.preprocessed.hash"),
             )
 
 
@@ -938,6 +976,7 @@ class TestCreateAllowMissingFiles(WorkbenchTest):
                 config_file_path,
                 log_file_path,
                 os.path.join(self.temp_dir, "metadata_check.csv.preprocessed"),
+                os.path.join(self.temp_dir, "metadata_check.csv.preprocessed.hash"),
             )
 
     def test_true(self, workbench_user):
@@ -979,6 +1018,7 @@ class TestCreateAllowMissingFiles(WorkbenchTest):
                 config_file_path,
                 log_file_path,
                 os.path.join(self.temp_dir, "metadata_check.csv.preprocessed"),
+                os.path.join(self.temp_dir, "metadata_check.csv.preprocessed.hash"),
             )
 
     def test_false_with_soft_checks(self, workbench_user):
@@ -1026,6 +1066,7 @@ class TestCreateAllowMissingFiles(WorkbenchTest):
                 config_file_path,
                 log_file_path,
                 os.path.join(self.temp_dir, "metadata_check.csv.preprocessed"),
+                os.path.join(self.temp_dir, "metadata_check.csv.preprocessed.hash"),
             )
 
 
@@ -1083,6 +1124,10 @@ class TestCreateAllowMissingFilesWithAdditionalFiles(WorkbenchTest):
                     self.temp_dir,
                     "metadata_additional_files_check.csv.preprocessed",
                 ),
+                os.path.join(
+                    self.temp_dir,
+                    "metadata_additional_files_check.csv.preprocessed.hash",
+                ),
             )
 
     def test_true(self, workbench_user):
@@ -1133,6 +1178,10 @@ class TestCreateAllowMissingFilesWithAdditionalFiles(WorkbenchTest):
                     self.temp_dir,
                     "metadata_additional_files_check.csv.preprocessed",
                 ),
+                os.path.join(
+                    self.temp_dir,
+                    "metadata_additional_files_check.csv.preprocessed.hash",
+                ),
             )
 
     def test_false_with_soft_checks(self, workbench_user):
@@ -1182,6 +1231,10 @@ class TestCreateAllowMissingFilesWithAdditionalFiles(WorkbenchTest):
                 os.path.join(
                     self.temp_dir,
                     "metadata_additional_files_check.csv.preprocessed",
+                ),
+                os.path.join(
+                    self.temp_dir,
+                    "metadata_additional_files_check.csv.preprocessed.hash",
                 ),
             )
 
@@ -1270,8 +1323,11 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
                 "rollback.csv",
             ),
             os.path.join(self.temp_dir, "add_media_create_nodes.csv.preprocessed"),
+            os.path.join(self.temp_dir, "add_media_create_nodes.csv.preprocessed.hash"),
             os.path.join(self.temp_dir, "add_media.csv.preprocessed"),
+            os.path.join(self.temp_dir, "add_media.csv.preprocessed.hash"),
             os.path.join(self.temp_dir, "metadata_check.csv.preprocessed"),
+            os.path.join(self.temp_dir, "metadata_check.csv.preprocessed.hash"),
             create_log_file_path,
         )
 
@@ -1321,9 +1377,12 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
                 log_data_false,
             )
         finally:
+            preprocessed_path = os.path.join(self.temp_dir, setup_nodes["add_media_csv_file_path"] + ".preprocessed")
             cleanup_paths(
                 config_file_path,
                 log_file_path,
+                preprocessed_path,
+                preprocessed_path + ".hash"
             )
 
     def test_true(self, setup_nodes, workbench_user):
@@ -1364,9 +1423,12 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
             )
             assert re.search("INFO - .*no problems found", log_data_true)
         finally:
+            preprocessed_path = os.path.join(self.temp_dir, setup_nodes["add_media_csv_file_path"] + ".preprocessed")
             cleanup_paths(
                 config_file_path,
                 log_file_path,
+                preprocessed_path,
+                preprocessed_path + ".hash",
             )
 
     def test_false_with_soft_checks(self, setup_nodes, workbench_user):
@@ -1417,9 +1479,12 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
                 "INFO - .*no problems found", log_file_false_with_soft_checks_data
             )
         finally:
+            preprocessed_path = os.path.join(self.temp_dir, setup_nodes["add_media_csv_file_path"]+".preprocessed")
             cleanup_paths(
                 config_file_path,
                 log_file_path,
+                preprocessed_path,
+                preprocessed_path + ".hash",
             )
 
 
@@ -1509,7 +1574,9 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
             add_media_additional_files_csv_path,
             create_log_file_path,
             os.path.join(self.temp_dir, "add_media_create_nodes.csv.preprocessed"),
+            os.path.join(self.temp_dir, "add_media_create_nodes.csv.preprocessed.hash"),
             os.path.join(self.temp_dir, "add_media_additional_files.csv.preprocessed"),
+            os.path.join(self.temp_dir, "add_media_additional_files.csv.preprocessed.hash"),
             os.path.join(
                 self.current_dir,
                 "assets",
@@ -1571,9 +1638,12 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
                 log_data_false,
             )
         finally:
+            preprocessed_path = os.path.join(self.temp_dir, os.path.basename(setup_nodes["add_media_additional_files_csv_path"]) + ".preprocessed")
             cleanup_paths(
                 config_file_path,
                 log_file_path,
+                preprocessed_path,
+                preprocessed_path + ".hash"
             )
 
     def test_true(self, setup_nodes, workbench_user):
@@ -1621,9 +1691,12 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
             )
             assert re.search("INFO - .*no problems found", log_data_true)
         finally:
+            preprocessed_path = os.path.join(self.temp_dir, os.path.basename(setup_nodes["add_media_additional_files_csv_path"]) + ".preprocessed")
             cleanup_paths(
                 config_file_path,
                 log_file_path,
+                preprocessed_path,
+                preprocessed_path + ".hash"
             )
 
     def test_false_with_soft_checks(self, setup_nodes, workbench_user):
@@ -1681,9 +1754,12 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
                 "INFO - .*no problems found", log_file_false_with_soft_checks_data
             )
         finally:
+            preprocessed_path = os.path.join(self.temp_dir, os.path.basename(setup_nodes["add_media_additional_files_csv_path"]) + ".preprocessed")
             cleanup_paths(
                 config_file_path,
                 log_file_path,
+                preprocessed_path,
+                preprocessed_path + ".hash",
             )
 
 
@@ -1744,7 +1820,9 @@ class TestCommentedCsvs(WorkbenchTest):
                 config_file_path_3,
                 os.path.join(self.temp_dir, "excel.csv"),
                 os.path.join(self.temp_dir, "excel.csv.preprocessed"),
+                os.path.join(self.temp_dir, "excel.csv.preprocessed.hash"),
                 os.path.join(self.temp_dir, "google_sheet.csv.preprocessed"),
+                os.path.join(self.temp_dir, "google_sheet.csv.preprocessed.hash"),
                 os.path.join(
                     self.current_dir,
                     "assets",
@@ -1770,9 +1848,11 @@ class TestCsvRowFilters(WorkbenchTest):
                 "field_edtf_date:is:2020-01-01",
                 "field_edtf_date:is:2000",
             ],
+            "temp_dir": self.temp_dir,
         }
         configuration = workbench_user.alter_configuration(configuration)
         config_file_path = self.write_config_and_get_path(configuration)
+
         preprocessed_csv_file_path = os.path.join(
             self.temp_dir, "csv_row_filters_test.csv.preprocessed"
         )
@@ -1796,5 +1876,6 @@ class TestCsvRowFilters(WorkbenchTest):
         finally:
             cleanup_paths(
                 preprocessed_csv_file_path,
+                f"{preprocessed_csv_file_path}.hash",
                 config_file_path,
             )

@@ -607,10 +607,6 @@ class TestImageAltText(WorkbenchTest):
             ),
         )
 
-    @unittest.skipIf(
-        "GITHUB_ACTIONS" in os.environ,
-        "Passes when tests locally run but not in Github workflows.",
-    )
     def test_update_alt_text(self, setup_nodes):
         requests.packages.urllib3.disable_warnings()
         configuration = {

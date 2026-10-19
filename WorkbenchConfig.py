@@ -212,7 +212,14 @@ class WorkbenchConfig:
         # Modify some conditional values.
         if "temp_dir" not in self.user_mods.keys():
             config["temp_dir"] = tempfile.gettempdir()
-        if self.user_mods["task"] in ["add_media", "update", "delete", "export_csv"]:
+        if self.user_mods["task"] in [
+            "add_media",
+            "update",
+            "delete",
+            "export_csv",
+            "add_alt_text",
+            "update_alt_text",
+        ]:
             config["id_field"] = "node_id"
         elif config["task"] == "delete_media":
             config["id_field"] = "media_id"

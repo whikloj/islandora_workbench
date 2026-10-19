@@ -2537,12 +2537,11 @@ def add_update_alt_text():
     logging.info(message)
 
     csv_reader = WorkbenchCsvReader(config)
-    csv_data = csv_reader.get_csv_data()
-    csv_data_as_list = list(csv_data)
+    csv_data_as_list = list(csv_reader.get_csv_data())
     num_csv_records = len(csv_data_as_list)
 
     row_count = 0
-    for row in csv_data:
+    for row in csv_data_as_list:
         row_count += 1
 
         if not value_is_numeric(row["node_id"]):
@@ -3240,7 +3239,11 @@ except Exception as e:
     )
     sys.exit(str(e))
 config = workbench_config.get_config()
-top_level_csv_reader = WorkbenchCsvReader(config)
+# These tasks either don't read an input CSV or create it themselves, so there is no CSV to read yet.
+tasks_without_input_csv = ["create_from_files", "get_data_from_view"]
+top_level_csv_reader = None
+if config["task"] not in tasks_without_input_csv:
+    top_level_csv_reader = WorkbenchCsvReader(config)
 
 if config["remove_password_from_config_file"] is True:
     with open(config["config_file"], "r+") as config_file_to_remove_password_from_fh:
@@ -3398,8 +3401,7 @@ if (
         )
 
 if "check" in config.keys():
-    tasks_to_skip = ["create_from_files", "get_data_from_view"]
-    if config["check"] is False and config["task"] not in tasks_to_skip:
+    if config["check"] is False and config["task"] not in tasks_without_input_csv:
         csv_data_to_count = top_level_csv_reader.get_csv_data()
         num_csv_records = len(list(csv_data_to_count))
         if num_csv_records == 0:
@@ -3420,18 +3422,6 @@ if config["check"] is False and "bootstrap" in config and len(config["bootstrap"
             logging.error(
                 f"Bootstrap script {command} failed with exit code {str(return_code)}."
             )
-# TODO: These are called inside get_csv_data() too; perhaps refactor to avoid duplication.
-if (
-    config["task"] != "create_from_files"
-    and config["input_csv"].startswith("http") is True
-):
-    get_csv_from_google_sheet(config)
-if (
-    config["task"] != "create_from_files"
-    and config["input_csv"].endswith(".xlsx") is True
-):
-    get_csv_from_excel(config)
-
 if config["enable_http_cache"] is True:
     if config["http_cache_storage"] == "sqlite" and os.path.exists("http_cache.sqlite"):
         logging.info('Cleared HTTP cache file "http_cache.sqlite".')
@@ -3507,7 +3497,7 @@ if config["task"] in ["create", "create_from_files"]:
 # Apparently, there's no built-in way of getting the number of items in a
 # DictReader, so we read the CSV file, convert it to a list, and get its length.
 if config["progress_bar"] is True:
-    if config["task"] != "create_from_files":
+    if config["task"] not in tasks_without_input_csv:
         csv_data_as_list = list(top_level_csv_reader.get_csv_data())
         num_csv_records = len(csv_data_as_list)
     pbar = InitBar()

@@ -1382,6 +1382,12 @@ def parse_field_definition(
         else:
             field_definition["handler_settings"] = None
 
+        if entity_type == "media":
+            if "file_extensions" in field_config["settings"]:
+                field_definition["file_extensions"] = field_config["settings"][
+                    "file_extensions"
+                ]
+
         field_definition["field_type"] = field_storage_config["type"]
         field_definition["cardinality"] = field_storage_config["cardinality"]
 
@@ -1773,7 +1779,7 @@ def check_rollback_file_path_directories(config: dict) -> None:
 
 def get_registered_media_extensions(
     config: dict, media_bundle: str, field_name_filter: Union[str, None] = None
-) -> Union[dict, bool]:
+) -> dict:
     """For the given media bundle, gets a list of file extensions registered in Drupal's
     "Allowed file extensions" configuration for each field that has this setting.
     """
@@ -1786,11 +1792,11 @@ def get_registered_media_extensions(
             'document', 'audio', 'video', 'file', etc.).
         field_name_filter: string
             If not None, filter the return value to just that field; if the field is
-            not a key in the return dict, return False.
+            not a key in the return dict, return an empty dictionary.
         Returns
         -------
         dict
-            A dictionary with one key per media bundle field name that has registered exensions.
+            A dictionary with one key per media bundle field name that has registered extensions.
             Each key has as its value a list of file extensions, without leading periods,
             registered for those fields in Drupal. All extensions are lower case.
     """
@@ -1806,12 +1812,8 @@ def get_registered_media_extensions(
                     field_name
                 ][i].lower()
 
-    if field_name_filter is not None and field_name_filter in registered_extensions:
-        return {field_name_filter: registered_extensions[field_name_filter]}
-    elif (
-        field_name_filter is not None and field_name_filter not in registered_extensions
-    ):
-        return False
+    if field_name_filter is not None:
+        return {k: v for k, v in registered_extensions.items() if k == field_name_filter}
     else:
         return registered_extensions
 
@@ -3699,7 +3701,7 @@ class WorkbenchCsvReader:
     configuration settings and caches it to avoid re-reading from disk each time."""
 
     _initialized: bool = False  # Whether the reader has been initialized.
-    _cache_file_path: str = None  # Path to the cached preprocessed CSV file.
+    _config_hash: str = None  # Hash of the settings the preprocessed file was made with.
     _cached_source_file_path: str = None  # Path to the original source CSV file path.
     # Whether commented out rows were present.
     _commented_out_input_csv_rows_present = False
@@ -3731,43 +3733,58 @@ class WorkbenchCsvReader:
     def _general_validation(self):
         """General validation run on instantiation of the class."""
         self._get_source_file_path()
+        # Generate the hash based on provided settings before preprocessing can modify them.
+        self._get_config_hash()
+
+    def _get_config_hash(self) -> str:
+        """
+        Generate a hash based on:
+-        - Source file path
+-        - The csv_file_target
+-        - The entire current configuration, sorted to avoid ordering issues
+
+        It is stored next to the preprocessed CSV file with the same filename and ".hash" appended.
+        (i.e. temp/some_file_name.csv.preprocessed will have temp/some_file_name.csv.preprocessed.hash).
+
+        Returns:
+            :return: str - The hash.
+        """
+        if self._config_hash is None:
+            effective_config = {
+                "file_path": self._get_source_file_path(),
+                "csv_file_target": self._csv_file_target,
+                **self._config,
+            }
+            config_json = json.dumps(
+                effective_config,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            )
+            self._config_hash = hashlib.sha256(config_json.encode()).hexdigest()
+        return self._config_hash
 
     def _get_csv_cache_path(self) -> str:
         """
-        Generate a unique cache file path for this CSV configuration.
-
-        The cache path is based on:
-        - Source file path
-        - The csv_file_target
-        - The entire current configuration, sorted to avoid ordering issues
-        - Hash to ensure uniqueness
+        Get the path of the preprocessed CSV file.
 
         Returns:
-            :return: str - The path to the cache file like: /tmp/workbench_cache_abc123def456.csv
+            :return: str - The path to the preprocessed file.
         """
-        full_file_path = self._get_source_file_path()
-
-        effective_config = {
-            "file_path": full_file_path,
-            "csv_file_target": self._csv_file_target,
-            **self._config,
-        }
-
-        # Canonical, order-independent representation
-        config_json = json.dumps(
-            effective_config,
-            sort_keys=True,
-            default=str,
-            separators=(",", ":"),
+        temp_dir = self._config.get("temp_dir", tempfile.gettempdir())
+        return (
+            os.path.join(temp_dir, os.path.basename(self._get_source_file_path()))
+            + ".preprocessed"
         )
 
-        config_hash = hashlib.sha256(config_json.encode()).hexdigest()[:12]
+    def _get_config_hash_path(self) -> str:
+        """
+        Get the path of the hash file for the preprocessed CSV file.
 
-        # Use the configured temp directory or the system temp directory
-        temp_dir = self._config.get("temp_dir", tempfile.gettempdir())
-        cache_filename = f"workbench_csv_cache_{config_hash}.csv"
-
-        return os.path.join(temp_dir, cache_filename)
+        Returns:
+            :return: str - The path to the hash file.
+        """
+        return self._get_csv_cache_path() + ".hash"
 
     def _get_source_file_path(self) -> str:
         """Resolve the actual source file path for the CSV file.
@@ -3796,12 +3813,13 @@ class WorkbenchCsvReader:
         elif local_file_path.startswith("http") or local_file_path.endswith(".xlsx"):
             # For Google Sheets, etc.
             extracted_path = get_extracted_csv_file_path(self._config)
-            # Download if not already present
-            if not os.path.exists(extracted_path):
-                if local_file_path.startswith("http"):
-                    get_csv_from_google_sheet(self._config)
-                elif local_file_path.endswith(".xlsx"):
-                    get_csv_from_excel(self._config)
+            # Always fetch a fresh copy.
+            if os.path.exists(extracted_path):
+                os.remove(extracted_path)
+            if local_file_path.startswith("http"):
+                get_csv_from_google_sheet(self._config)
+            elif local_file_path.endswith(".xlsx"):
+                get_csv_from_excel(self._config)
             return extracted_path
         else:
             return os.path.join(self._config["input_dir"], local_file_path)
@@ -3840,7 +3858,7 @@ class WorkbenchCsvReader:
         """
         if not self._initialized:
             self._run_preprocessing()
-        return self._cache_file_path
+        return self._get_csv_cache_path()
 
     def _count_rows_in_cache(self):
         if not os.path.exists(self._get_csv_cache_path()):
@@ -3888,6 +3906,15 @@ class WorkbenchCsvReader:
             logging.debug(f"Cache invalid: cache file is empty")
             return False
 
+        # Check that the cache was made with the same settings.
+        try:
+            with open(self._get_config_hash_path(), "r") as hash_file:
+                if hash_file.read().strip() != self._get_config_hash():
+                    logging.debug("Cache invalid: configuration has changed")
+                    return False
+        except OSError:
+            return False
+
         return True
 
     def _validate_field_names(self, field_names: list) -> None:
@@ -3912,7 +3939,10 @@ class WorkbenchCsvReader:
             "export_csv": "node_id",
         }
 
-        if id_columns[self._config["task"]] not in field_names:
+        if (
+            self._config["task"] in id_columns
+            and id_columns[self._config["task"]] not in field_names
+        ):
             message = f'"{self._config["task"]}" tasks require a "{id_columns[self._config["task"]]}" CSV column. Please check your input CSV file and try again.'
             logging.error(message)
             raise WorkbenchCsvReaderException("Error: " + message)
@@ -4400,6 +4430,8 @@ class WorkbenchCsvReader:
                     self._row_count = row_num
                     # Move the temp file to the cache path, overwriting if it exists.
                     os.replace(temp_path, preprocessed_csv_path)
+                    with open(self._get_config_hash_path(), "w") as hash_file:
+                        hash_file.write(self._get_config_hash())
                 finally:
                     # If we raised an Exception before completing the temp file will exist, so clean it up.
                     if os.path.exists(temp_path):
@@ -5897,10 +5929,12 @@ def validate_required_fields_have_values_action(
     :param row: dict - The CSV row.
     """
     for required_field in required_fields:
-        if len(row[required_field].strip()) == 0:
+        if required_field == "field_model" and config["paged_content_from_directories_parents_exist"] is True and "paged_content_page_model_tid" in config.keys() and config["paged_content_page_model_tid"] is not None:
+            continue
+        if required_field not in row or len(row[required_field].strip()) == 0:
             message = f"Required Drupal field \"{required_field}\" in row with ID \"{row[config['id_field']]}\" is empty."
             logging.error(message)
-            raise WorkbenchValidationException(required_field)
+            raise WorkbenchValidationException(message)
 
 
 def validate_csv_field_cardinality(
@@ -6216,6 +6250,7 @@ def validate_geolocation_fields_action(
                 )
                 logging.error(message)
                 raise WorkbenchValidationException(message)
+
 
 def validate_link_fields(
     config: dict,
@@ -6911,7 +6946,7 @@ def validate_parent_ids_in_csv_id_to_node_id_map(
             )
 
             for parent_in_id_map_row in parent_in_id_map_result:
-                parents_from_id_map.append(parent_in_id_map_row["node_id"].strip())
+                parents_from_id_map.append(parent_in_id_map_row[id_field].strip())
             parents_from_id_map = list(dict.fromkeys(parents_from_id_map))
             if len(parents_from_id_map) > 1:
                 parents_from_id_map_message = f'Query of ID map for parent ID "{row["parent_id"]}" returned multiple node IDs: ({", ".join(parents_from_id_map)}).'
@@ -7313,7 +7348,8 @@ def validate_typed_relation_field_value_action(
     csv_field_name: str,
     csv_field_value: str,
     row_id: str,
-) -> None:
+) -> bool:
+    new_terms_present = False
     vocabularies = False
     if "vocabularies" in field_definitions[csv_field_name]:
         vocabularies = get_field_vocabularies(config, field_definitions, csv_field_name)
@@ -7360,16 +7396,18 @@ def validate_typed_relation_field_value_action(
                 field_value_to_check = config["subdelimiter"].join(
                     delimited_field_values_without_relator_strings
                 )
-                new_term_names_in_csv = validate_taxonomy_reference_value(
+                if validate_taxonomy_reference_value_action(
                     config,
                     field_definitions,
                     csv_field_name,
                     field_value_to_check,
                     row_id,
-                )
+                ):
+                    new_terms_present = True
         except TypeError:
             message = f'Workbench cannot get vocabularies linked to field "{csv_field_name}". Please confirm that field has at least one vocabulary.'
             raise WorkbenchValidationException(message)
+    return new_terms_present
 
 
 def validate_taxonomy_reference_value(
@@ -7773,10 +7811,11 @@ def validate_taxonomy_reference_value_action(
                     raise WorkbenchValidationException(message)
 
             # Check to see if field_value is a member of the field's vocabularies. First, check whether field_value is a term ID.
-            elif (
+            if (
                 value_is_numeric(field_value)
                 and csv_field_name not in config["columns_with_term_names"]
             ):
+                field_value = field_value.strip()
                 term_in_vocabs = False
                 for vocab_id in this_fields_vocabularies:
                     term_vocab = get_term_vocab(config, field_value)
@@ -7788,15 +7827,10 @@ def validate_taxonomy_reference_value_action(
                         f'CSV field "{csv_field_name}" in row with ID {str(row_id)} contains a term ID ('
                         + f"{field_value}) that is "
                     )
-                    message += (
-                        "not in " + "one of "
-                        if len(this_fields_vocabularies) > 1
-                        else (
-                            "" + "the referenced vocabular" + "ies"
-                            if len(this_fields_vocabularies) > 1
-                            else "y" + f"({this_field_vocabularies_string})."
-                        )
-                    )
+                    if len(this_fields_vocabularies) > 1:
+                        message += f"not in one of the referenced vocabularies ({this_field_vocabularies_string})."
+                    else:
+                        message += f'not in the referenced vocabulary ("{this_fields_vocabularies[0]}").'
                     raise WorkbenchValidationException(message)
             # Then check values that are URIs.
             elif field_value.startswith("http"):
@@ -7831,7 +7865,10 @@ def validate_taxonomy_reference_value_action(
                         if len(this_fields_vocabularies) == 1:
                             if config["allow_adding_terms"] is True:
                                 # Warn if namespaced term name is not in specified vocab.
-                                new_term_names_in_csv = True
+                                if tid is not False:
+                                    continue
+                                if field_value not in new_terms_to_add:
+                                    new_terms_to_add.append(field_value)
                                 if len(field_value.strip()) > 255:
                                     message = (
                                         f'CSV field "{csv_field_name}" in record with ID {str(row_id)} contains a taxonomy term that exceeds Drupal\'s limit of 255 characters (length of term is '
@@ -7864,7 +7901,6 @@ def validate_taxonomy_reference_value_action(
                                 if config["validate_terms_exist"] is True:
                                     logging.warning(message)
                             else:
-                                new_term_names_in_csv = True
                                 message = (
                                     f'CSV field "{csv_field_name}" in row with ID {str(row_id)} contains a term ("{field_value}")'
                                     + '") that is '
@@ -7882,10 +7918,6 @@ def validate_taxonomy_reference_value_action(
                             if namespace_vocab_id not in this_fields_vocabularies:
                                 message = (
                                     f'CSV field "{csv_field_name}" in row with ID {str(row_id)} contains a namespaced term name '
-                                    + +namespaced_term_name.strip()
-                                    + '") that specifies a vocabulary not associated with that field ('
-                                    + namespace_vocab_id
-                                    + ")."
                                     f'("{namespaced_term_name.strip()}") that specifies a vocabulary not associated with that field ('
                                     + namespace_vocab_id
                                     + ")."
@@ -7899,7 +7931,6 @@ def validate_taxonomy_reference_value_action(
                             # Warn if namespaced term name is not in specified vocab.
                             if config["allow_adding_terms"] is True:
                                 if tid is False and field_value not in new_terms_to_add:
-                                    new_term_names_in_csv = True
                                     message = (
                                         f'CSV field "{csv_field_name}" in row with ID {str(row_id)} contains a term ("'
                                         + namespaced_term_name.strip()

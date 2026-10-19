@@ -42,3 +42,19 @@ target-version = ["py311", "py312", "py313", "py314"]
 include = '(\.pyi?|\.ipynb|workbench)$'
 check = true
 verbose = true
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-v --disable-warnings --maxfail=1"
+testpaths = [
+    "tests/field_tests.py",
+    "tests/field_tests_values.py",
+    "tests/islandora_tests.py",
+    "tests/islandora_tests_check.py",
+    "tests/islandora_tests_hooks.py",
+    "tests/islandora_tests_paged_content.py",
+    "tests/islandora_tests_recovery_mode.py",
+    "tests/csv_id_to_node_id_map_tests.py",
+    "tests/unit_tests.py",
+    "tests/unit_tests_workbench_config.py",
+]

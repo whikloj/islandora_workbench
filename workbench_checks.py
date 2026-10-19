@@ -360,18 +360,20 @@ def task_specific_checks(
 def _generate_geolocation_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    """ Generate a list of geolocation fields that are present in the CSV file.
+    """Generate a list of geolocation fields that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param field_names_in_csv: list - the list of field names in the CSV file
     """
-    return _generate_general_field_lists(field_definitions, field_names_in_csv, "geolocation")
+    return _generate_general_field_lists(
+        field_definitions, field_names_in_csv, "geolocation"
+    )
 
 
 def _generate_link_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    """ Generate a list of link fields that are present in the CSV file.
+    """Generate a list of link fields that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param field_names_in_csv: list - the list of field names in the CSV file
@@ -382,28 +384,31 @@ def _generate_link_field_list(
 def _generate_authority_link_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    """ Generate a list of authority link fields that are present in the CSV file.
+    """Generate a list of authority link fields that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param field_names_in_csv: list - the list of field names in the CSV file
     """
-    return _generate_general_field_lists(field_definitions, field_names_in_csv, "authority_link")
+    return _generate_general_field_lists(
+        field_definitions, field_names_in_csv, "authority_link"
+    )
 
 
 def _generate_edtf_field_lists(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
-    """ Generate a list of EDTF fields that are present in the CSV file.
+    """Generate a list of EDTF fields that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param field_names_in_csv: list - the list of field names in the CSV file
     """
     return _generate_general_field_lists(field_definitions, field_names_in_csv, "edtf")
 
+
 def _generate_general_field_lists(
     field_definitions: dict, field_names_in_csv: list, field_type: str
 ) -> list:
-    """ Generate a list of fields of a specific type that are present in the CSV file.
+    """Generate a list of fields of a specific type that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param field_names_in_csv: list - the list of field names in the CSV file
@@ -415,10 +420,11 @@ def _generate_general_field_lists(
         if val["field_type"] == field_type and key in field_names_in_csv
     ]
 
+
 def _generate_cardinality_field_list(
     field_definitions: dict, csv_column_headers: list
 ) -> dict:
-    """ Generate a list of fields with cardinality >= 1 that are present in the CSV file.
+    """Generate a list of fields with cardinality >= 1 that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param csv_column_headers: list - the list of column headers in the CSV file
@@ -435,7 +441,7 @@ def _generate_cardinality_field_list(
 def _generate_taxonomy_term_reference_field_list(
     field_definitions: dict, csv_column_headers: list
 ) -> list:
-    """ Generate a list of taxonomy term reference fields that are present in the CSV file.
+    """Generate a list of taxonomy term reference fields that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param csv_column_headers: list - the list of column headers in the CSV file
@@ -452,7 +458,7 @@ def _generate_taxonomy_term_reference_field_list(
 def _generate_typed_relation_field_list(
     field_definitions: dict, csv_column_headers: list
 ) -> list:
-    """ Generate a list of typed relation reference fields that are present in the CSV file.
+    """Generate a list of typed relation reference fields that are present in the CSV file.
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param csv_column_headers: list - the list of column headers in the CSV file
@@ -748,19 +754,21 @@ def _task_specific_checks_create(
     required_drupal_fields_node = workbench_utils.get_required_bundle_fields(
         config, "node", config["content_type"]
     )
-    for required_drupal_field in required_drupal_fields_node:
-        if required_drupal_field not in csv_column_headers:
-            logging.error(
-                "Required Drupal field %s is not present in the CSV file.",
-                required_drupal_field,
-            )
-            sys.exit(
-                'Error: Field "'
-                + required_drupal_field
-                + '" required for content type "'
-                + config["content_type"]
-                + '" is not present in the CSV file.'
-            )
+    missing_required_fields = [k for k in required_drupal_fields_node if k not in csv_column_headers]
+    if "field_model" in missing_required_fields and config["paged_content_from_directories_parents_exist"] is True and config.get("paged_content_page_model_tid") is not None:
+        # If we are ingesting paged content from directories and the parent nodes already exist, we don't need to require the field_model field in the CSV file.
+        missing_required_fields.remove("field_model")
+    if missing_required_fields:
+        logging.error(
+            "The following required Drupal fields for content type %s are not present in the CSV file: %s.",
+            config["content_type"],
+            ", ".join(missing_required_fields),
+        )
+        sys.exit(
+            f'Error: The following required Drupal fields for content type {config["content_type"]} are not present in the CSV file: "'
+            + '", "'.join(missing_required_fields)
+            + '".'
+        )
     message = "OK, required Drupal fields are present in the CSV file."
     print(message)
     logging.info(message)
@@ -796,7 +804,7 @@ def _task_specific_checks_create(
         field_definitions, reader.get_field_names()
     )
     # Set this to True if we find any taxonomy term reference fields in the CSV file, so we can report at the end of the checks whether taxonomy term reference field validation was performed.
-    is_taxonomy_fields_present = False
+    is_taxonomy_fields_present = len(taxonomy_reference_fields_present) > 0
     # Set this to True if we find any taxonomy term reference fields in the CSV file that are linked to vocabularies that don't exist in Drupal, so we can report at the end of the checks whether there were problems with the taxonomy term reference field configuration.
     has_new_taxonomy_terms: bool = False
     taxonomy_reference_errors = []
@@ -829,7 +837,11 @@ def _task_specific_checks_create(
     is_authority_link_fields_present = False
     # Set this to True if we find any EDTF fields in the CSV file, so we can report at the end of the checks whether EDTF field validation was performed.
     is_edtf_fields_present = False
-    is_typed_relation_reference_fields_present = False
+    typed_relations_fields_present = _generate_typed_relation_field_list(
+        field_definitions, reader.get_field_names()
+    )
+    is_typed_relation_reference_fields_present = len(typed_relations_fields_present) > 0
+    has_new_typed_relation_terms = False
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
         try:
             workbench_utils.validate_required_fields_have_values_action(
@@ -980,7 +992,7 @@ def _task_specific_checks_create(
                         field_value.strip()
                     ):
                         message = (
-                            f'Value in field "{edtf_field}" in row with ID {row["node_id"]} ('
+                            f'Value in field "{edtf_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid EDTF date/time."
                         )
                         rows_with_errors.append((row_num, message))
@@ -993,7 +1005,7 @@ def _task_specific_checks_create(
             )
             if len(delimited_field_values) > cardinality_value:
                 message = (
-                    f'CSV field "{cardinality_field}" in record with ID {row["node_id"]} contains more values '
+                    f'CSV field "{cardinality_field}" in record with ID {row[config["id_field"]]} contains more values '
                     + f'than the number of values allowed for that field (max {cardinality_value}). Workbench with add only the first{"" if cardinality_value == 1 else f" {cardinality_value}"} value(s) for that field.'
                 )
                 logging.warning(message)
@@ -1002,6 +1014,7 @@ def _task_specific_checks_create(
         for taxonomy_reference_field in taxonomy_reference_fields_present:
             if len(row[taxonomy_reference_field]) > 0:
                 try:
+                    is_taxonomy_fields_present = True
                     if workbench_utils.validate_taxonomy_reference_value_action(
                         config,
                         field_definitions,
@@ -1011,13 +1024,11 @@ def _task_specific_checks_create(
                     ):
                         has_new_taxonomy_terms = True
                 except WorkbenchValidationException as e:
-                    if hasattr(e, "wrapped"):
+                    if e.wrapped:
                         # Wrapped exception is the compilation of one or more validation errors for the individual values in a multi-valued typed relation field.
                         rows_with_errors.append((row_num, str(e)))
 
-        for typed_relation_reference_field in _generate_typed_relation_field_list(
-            field_definitions, reader.get_field_names()
-        ):
+        for typed_relation_reference_field in typed_relations_fields_present:
             if len(row[typed_relation_reference_field]) > 0:
                 delimited_field_values = row[typed_relation_reference_field].split(
                     config["subdelimiter"]
@@ -1025,13 +1036,15 @@ def _task_specific_checks_create(
                 for field_value in delimited_field_values:
                     if len(field_value.strip()) > 0:
                         try:
-                            workbench_utils.validate_typed_relation_field_value_action(
+                            is_typed_relation_reference_fields_present = True
+                            if workbench_utils.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
                                 field_value.strip(),
                                 row[config["id_field"]],
-                            )
+                            ):
+                                has_new_typed_relation_terms = True
                         except WorkbenchValidationException as e:
                             message = (
                                 f'Value in field "{typed_relation_reference_field}" in row with ID {row[config["id_field"]]} ('
@@ -1100,6 +1113,19 @@ def _task_specific_checks_create(
             logging.info(message)
         if is_edtf_fields_present:
             message = "OK, EDTF field values in the CSV file validate."
+            print(message)
+            logging.info(message)
+        if is_typed_relation_reference_fields_present:
+            message = "OK, term IDs/names used in typed relation fields in the CSV file exist in their respective taxonomies"
+            if has_new_typed_relation_terms and config["allow_adding_terms"]:
+                if config["log_term_creation"] is True:
+                    message += (
+                        " (new terms will be created as noted in the Workbench log)."
+                    )
+                else:
+                    message += ' (new terms will be created but not noted in the Workbench log since "log_term_creation" is set to false).'
+            else:
+                message += "."
             print(message)
             logging.info(message)
         if is_taxonomy_fields_present:
@@ -1198,6 +1224,10 @@ def _task_specific_checks_update(
             f"Error: Errors found in taxonomy reference field configuration. See log for more detail.\n{error_messages}"
         )
 
+    typed_relation_fields_present = _generate_typed_relation_field_list(
+        field_definitions, reader.get_field_names()
+    )
+
     for csv_column_header in csv_column_headers:
         if (
             csv_column_header not in drupal_fieldnames
@@ -1231,10 +1261,12 @@ def _task_specific_checks_update(
     # Set this to True if we find any EDTF fields in the CSV file, so we can report at the end of the checks whether EDTF field validation was performed.
     is_edtf_fields_present = False
     # Set this to True if we find any taxonomy term reference fields in the CSV file, so we can report at the end of the checks whether taxonomy term reference field validation was performed.
-    is_taxonomy_fields_present = False
+    is_taxonomy_fields_present = len(taxonomy_reference_fields_present) > 0
     # Set this to True if we find any taxonomy term reference fields in the CSV file that have term IDs/names that do not exist in their respective vocabularies, so we can report at the end of the checks whether there are taxonomy term reference field values that will require new terms to be created.
-    has_taxonomy_fields_terms: bool = False
-    is_typed_relation_reference_fields_present = False
+    has_new_taxonomy_terms: bool = False
+    # Set this to True if we find any typed relation reference fields in the CSV file, so we can report at the end of the checks whether typed relation reference field validation was performed.
+    is_typed_relation_reference_fields_present = len(typed_relation_fields_present) > 0
+    has_new_typed_relation_terms = False
 
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
         try:
@@ -1308,7 +1340,7 @@ def _task_specific_checks_update(
                         field_value.strip()
                     ):
                         message = (
-                            f'Value in field "{edtf_field}" in row with ID {row["node_id"]} ('
+                                f'Value in field "{edtf_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid EDTF date/time."
                         )
                         row_errors.append((row_num, message))
@@ -1321,7 +1353,7 @@ def _task_specific_checks_update(
             )
             if len(delimited_field_values) > cardinality_value:
                 message = (
-                    f'CSV field "{cardinality_field}" in record with ID {row["node_id"]} contains more values '
+                    f'CSV field "{cardinality_field}" in record with ID {row[config["id_field"]]} contains more values '
                     + f'than the number of values allowed for that field (max {cardinality_value}). Workbench with add only the first{"" if cardinality_value == 1 else f" {cardinality_value}"} value(s) for that field.'
                 )
                 logging.warning(message)
@@ -1337,15 +1369,13 @@ def _task_specific_checks_update(
                         row[taxonomy_reference_field],
                         row[config["id_field"]],
                     ):
-                        has_new_taxonomy_terms = True
+                        has_new_typed_relation_terms = True
                 except WorkbenchValidationException as e:
-                    if hasattr(e, "wrapped"):
+                    if e.wrapped:
                         # Wrapped exception is the compilation of one or more validation errors for the individual values in a multi-valued typed relation field.
                         row_errors.append((row_num, str(e)))
 
-        for typed_relation_reference_field in _generate_typed_relation_field_list(
-            field_definitions, reader.get_field_names()
-        ):
+        for typed_relation_reference_field in typed_relation_fields_present:
             if len(row[typed_relation_reference_field]) > 0:
                 delimited_field_values = row[typed_relation_reference_field].split(
                     config["subdelimiter"]
@@ -1353,13 +1383,15 @@ def _task_specific_checks_update(
                 for field_value in delimited_field_values:
                     if len(field_value.strip()) > 0:
                         try:
-                            workbench_utils.validate_typed_relation_field_value_action(
+                            is_typed_relation_reference_fields_present = True
+                            if workbench_utils.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
                                 field_value.strip(),
                                 row[config["id_field"]],
-                            )
+                            ):
+                                has_new_typed_relation_terms = True
                         except WorkbenchValidationException as e:
                             message = (
                                 f'Value in field "{typed_relation_reference_field}" in row with ID {row[config["id_field"]]} ('
@@ -1396,8 +1428,21 @@ def _task_specific_checks_update(
             message = "OK, EDTF field values in the CSV file validate."
             print(message)
             logging.info(message)
+        if is_typed_relation_reference_fields_present:
+            message = "OK, term IDs/names used in typed relation fields in the CSV file exist in their respective taxonomies"
+            if has_new_typed_relation_terms and config["allow_adding_terms"]:
+                if config["log_term_creation"] is True:
+                    message += (
+                        " (new terms will be created as noted in the Workbench log)."
+                    )
+                else:
+                    message += ' (new terms will be created but not noted in the Workbench log since "log_term_creation" is set to false).'
+            else:
+                message += "."
+            print(message)
+            logging.info(message)
         if is_taxonomy_fields_present:
-            if has_taxonomy_fields_terms and config["allow_adding_terms"]:
+            if has_new_taxonomy_terms and config["allow_adding_terms"]:
                 if config["validate_terms_exist"]:
                     message = "OK, term IDs/names in CSV file exist in their respective taxonomies (new terms will be created"
                     if config["log_term_creation"] is True:
@@ -1415,7 +1460,7 @@ def _task_specific_checks_update(
                     logging.warning(
                         "Skipping check for existence of terms (but new terms will be created)."
                     )
-            elif not has_taxonomy_fields_terms:
+            elif not has_new_taxonomy_terms:
                 # All term IDs are in their field's vocabularies.
                 print(
                     "OK, term IDs/names in CSV file exist in their respective taxonomies."
@@ -1464,19 +1509,19 @@ def _task_specific_checks_update_media_by_node(
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
         node_media_ids = workbench_utils.get_node_media_ids(
             config,
-            row["node_id"],
+            row[config["id_field"]],
             media_use_tids=config["update_media_by_node_media_use_tids"],
             media_type=config["media_type"],
         )
         if len(node_media_ids) == 1:
             logging.info(
-                f'Matching media on node {{row["node_id"]}} (media ID {node_media_ids[0]}) will be updated.'
+                f'Matching media on node {row[config["id_field"]]} (media ID {node_media_ids[0]}) will be updated.'
             )
         elif len(node_media_ids) == 0:
-            logging.warning(f'No matching media on node {row["node_id"]} found.')
+            logging.warning(f'No matching media on node {row[config["id_field"]]} found.')
         else:
             logging.warning(
-                f'Multiple matching media on node {row["node_id"]} found, with media IDs {", ".join([str(x) for x in node_media_ids]).strip()}. Workbench can only update one media per node at a time.'
+                f'Multiple matching media on node {row[config["id_field"]]} found, with media IDs {", ".join([str(x) for x in node_media_ids]).strip()}. Workbench can only update one media per node at a time.'
             )
 
 
@@ -1500,58 +1545,71 @@ def _task_specific_checks_add_media(
             logging.error(message)
             sys.exit("Error: " + message)
 
+    row_errors = []
+    file_and_checksum_in_csv = False
+    checksum_validation_all_ok = True
     if (
         config["validate_fixity_during_check"]
         and config["fixity_algorithm"] is not None
     ):
-        field_and_checksum_in_csv = False
         fixity_message = "Performing local checksum validation."
         logging.info(fixity_message)
         print(fixity_message + " This might take some time.")
-        validate_checksums_csv_data = reader.get_csv_data()
-        row_id = "node_id"
-        checksum_validation_all_ok = True
-        for checksum_validation_row_count, checksum_validation_row in enumerate(
-            validate_checksums_csv_data, start=1
-        ):
-            file_name = checksum_validation_row["file"]
-            if (
-                "file" in checksum_validation_row
-                and "checksum" in checksum_validation_row
-            ):
-                field_and_checksum_in_csv = True
-                if not file_name.lower().startswith("http"):
-                    filepath = Path(file_name)
-                    if not filepath.is_absolute():
-                        filepath = Path(config["input_dir"]) / filepath
-                    hash_from_local = workbench_utils.get_file_hash_from_local(
-                        config, str(filepath), config["fixity_algorithm"]
-                    )
-                    if hash_from_local is False:
-                        continue
-                    if "checksum" in checksum_validation_row:
-                        if (
-                            hash_from_local
-                            == checksum_validation_row["checksum"].strip()
-                        ):
-                            logging.info(
-                                'Local %s checksum and value in the CSV "checksum" field for file "%s" (%s) match.',
-                                config["fixity_algorithm"],
-                                filepath,
-                                hash_from_local,
-                            )
-                        else:
-                            checksum_validation_all_ok = False
-                            logging.warning(
-                                'Local %s checksum and value in the CSV "checksum" field for file "%s" (named in CSV row "%s") do not match (local: %s, CSV: %s).',
-                                config["fixity_algorithm"],
-                                filepath,
-                                checksum_validation_row[row_id],
-                                hash_from_local,
-                                checksum_validation_row["checksum"],
-                            )
+        row_id = "node_id"  # The id field for add_media is "node_id", not sure why there was
 
-        if field_and_checksum_in_csv:
+    # Validate config setting of "media_use_tid" first
+    workbench_utils.validate_media_use_tid(config)
+
+    csv_data = reader.get_csv_data()
+    for count, row in enumerate(csv_data, start=1):
+        try:
+            if "media_use_tid" in row:
+                delimited_field_values = row["media_use_tid"].split(config["subdelimiter"])
+                for field_value in delimited_field_values:
+                    if len(field_value.strip()) > 0:
+                        workbench_utils.validate_media_use_tid(config, field_value, row[config["id_field"]])
+
+            if config["validate_fixity_during_check"] and config["fixity_algorithm"] is not None:
+                if (
+                    "file" in row
+                    and "checksum" in row
+                ):
+                    file_name = row["file"]
+                    file_and_checksum_in_csv = True
+                    if not file_name.lower().startswith("http"):
+                        filepath = Path(file_name)
+                        if not filepath.is_absolute():
+                            filepath = Path(config["input_dir"]) / filepath
+                        hash_from_local = workbench_utils.get_file_hash_from_local(
+                            config, str(filepath), config["fixity_algorithm"]
+                        )
+                        if hash_from_local is False:
+                            continue
+                        if "checksum" in row:
+                            if hash_from_local == row["checksum"].strip():
+                                logging.info(
+                                    'Local %s checksum and value in the CSV "checksum" field for file "%s" (%s) match.',
+                                    config["fixity_algorithm"],
+                                    filepath,
+                                    hash_from_local,
+                                )
+                            else:
+                                checksum_validation_all_ok = False
+                                logging.warning(
+                                    'Local %s checksum and value in the CSV "checksum" field for file "%s" (named in CSV row "%s") do not match (local: %s, CSV: %s).',
+                                    config["fixity_algorithm"],
+                                    filepath,
+                                    row[config["id_field"]],
+                                    hash_from_local,
+                                    row["checksum"],
+                                )
+                else:
+                    file_and_checksum_in_csv = False
+                    logging.warning(f"Could not validate checksum for row {row[config['id_field']]}")
+        except WorkbenchValidationException as e:
+            row_errors.append((row[config['id_field']], str(e)))
+
+        if file_and_checksum_in_csv:
             if checksum_validation_all_ok:
                 checksum_validation_message = (
                     "OK, checksum validation during complete. All checks pass."
@@ -1567,9 +1625,19 @@ def _task_specific_checks_add_media(
                     + " See the log for more detail."
                 )
         else:
-            checksum_validation_message = 'Could not validate checksums because the input CSV did not contain both "field" and "checksum" columns.'
+            checksum_validation_message = 'Could not validate all checksums because the input CSV did not contain both "file" and "checksum" values for all rows.'
             print("Warning: " + checksum_validation_message)
             logging.warning(checksum_validation_message)
+
+        if len(row_errors) > 0:
+            error_messages = "\n".join(
+                [f"Row {row_num}: {error_message}" for row_num, error_message in row_errors]
+            )
+            logging.error(f"Errors found in CSV data:\n{error_messages}")
+            sys.exit(
+                f"Error: Errors found in CSV data. See log for more detail.\n{error_messages}"
+            )
+
 
 
 def _task_specific_checks_create_terms(
@@ -1625,6 +1693,10 @@ def _task_specific_checks_create_terms(
             f"Error: Errors found in taxonomy reference field configuration. See log for more detail.\n{error_messages}"
         )
 
+    typed_relation_fields_present = _generate_typed_relation_field_list(
+        field_definitions, reader.get_field_names()
+    )
+
     # Validate length of 'term_name'.
     validate_term_name_csv_data = reader.get_csv_data()
     row_errors = []
@@ -1637,11 +1709,13 @@ def _task_specific_checks_create_terms(
     # Set this to True if we find any EDTF fields in the CSV file, so we can report at the end of the checks whether EDTF field validation was performed.
     is_edtf_fields_present = False
     # Set this to True if we find any taxonomy term reference fields in the CSV file, so we can report at the end of the checks whether taxonomy term reference field validation was performed.
-    is_taxonomy_fields_present = False
+    is_taxonomy_fields_present = len(taxonomy_reference_fields_present) > 0
     # Set this to True if we find any taxonomy term reference fields in the CSV file that have term IDs/names that do not exist in their respective vocabularies, so we can report at the end of the checks whether there are taxonomy term reference field values that will require new terms to be created.
     has_new_taxonomy_terms: bool = False
 
-    is_typed_relation_reference_fields_present = False
+    # Set this to True if we find any typed relation reference fields in the CSV file, so we can report at the end of the checks whether typed relation reference field validation was performed.
+    is_typed_relation_reference_fields_present = len(typed_relation_fields_present) > 0
+    has_new_typed_relation_terms = False
 
     for count, row in enumerate(validate_term_name_csv_data, start=1):
         if "term_name" in row and len(row["term_name"]) > 255:
@@ -1717,7 +1791,7 @@ def _task_specific_checks_create_terms(
                         field_value.strip()
                     ):
                         message = (
-                            f'Value in field "{edtf_field}" in row with ID {row["node_id"]} ('
+                            f'Value in field "{edtf_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid EDTF date/time."
                         )
                         row_errors.append((count, message))
@@ -1730,7 +1804,7 @@ def _task_specific_checks_create_terms(
             )
             if len(delimited_field_values) > cardinality_value:
                 message = (
-                    f'CSV field "{cardinality_field}" in record with ID {row["node_id"]} contains more values '
+                    f'CSV field "{cardinality_field}" in record with ID {row[config["id_field"]]} contains more values '
                     + f'than the number of values allowed for that field (max {cardinality_value}). Workbench with add only the first{"" if cardinality_value == 1 else f" {cardinality_value}"} value(s) for that field.'
                 )
                 logging.warning(message)
@@ -1745,7 +1819,7 @@ def _task_specific_checks_create_terms(
                 for field_value in delimited_field_values:
                     if len(field_value) > int(field_definitions[header]["max_length"]):
                         message = (
-                            f'CSV field "{header}" in record with ID {row["node_id"]} contains a value that is '
+                            f'CSV field "{header}" in record with ID {row[config["id_field"]]} contains a value that is '
                             + f'longer ({str(len(field_value))} characters) than allowed for that field ({str(field_definitions[header]["max_length"])}) '
                             + " characters). Workbench will truncate this value prior to populating Drupal."
                         )
@@ -1764,13 +1838,11 @@ def _task_specific_checks_create_terms(
                     ):
                         has_new_taxonomy_terms = True
                 except WorkbenchValidationException as e:
-                    if hasattr(e, "wrapped"):
+                    if e.wrapped:
                         # Wrapped exception is the compilation of one or more validation errors for the individual values in a multi-valued typed relation field.
                         row_errors.append((count, str(e)))
 
-        for typed_relation_reference_field in _generate_typed_relation_field_list(
-            field_definitions, reader.get_field_names()
-        ):
+        for typed_relation_reference_field in typed_relation_fields_present:
             if len(row[typed_relation_reference_field]) > 0:
                 delimited_field_values = row[typed_relation_reference_field].split(
                     config["subdelimiter"]
@@ -1778,13 +1850,15 @@ def _task_specific_checks_create_terms(
                 for field_value in delimited_field_values:
                     if len(field_value.strip()) > 0:
                         try:
-                            workbench_utils.validate_typed_relation_field_value_action(
+                            is_typed_relation_reference_fields_present = True
+                            if workbench_utils.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
                                 field_value.strip(),
                                 row[config["id_field"]],
-                            )
+                            ):
+                                has_new_typed_relation_terms = True
                         except WorkbenchValidationException as e:
                             message = (
                                 f'Value in field "{typed_relation_reference_field}" in row with ID {row[config["id_field"]]} ('
@@ -1815,6 +1889,19 @@ def _task_specific_checks_create_terms(
             logging.info(message)
         if is_edtf_fields_present:
             message = "OK, EDTF field values in the CSV file validate."
+            print(message)
+            logging.info(message)
+        if is_typed_relation_reference_fields_present:
+            message = "OK, term IDs/names used in typed relation fields in the CSV file exist in their respective taxonomies"
+            if has_new_typed_relation_terms and config["allow_adding_terms"]:
+                if config["log_term_creation"] is True:
+                    message += (
+                        " (new terms will be created as noted in the Workbench log)."
+                    )
+                else:
+                    message += ' (new terms will be created but not noted in the Workbench log since "log_term_creation" is set to false).'
+            else:
+                message += "."
             print(message)
             logging.info(message)
         if is_taxonomy_fields_present:
@@ -1916,6 +2003,10 @@ def _task_specific_checks_update_terms(
             f"Error: Errors found in taxonomy reference field configuration. See log for more detail.\n{error_messages}"
         )
 
+    typed_relation_fields_present = _generate_typed_relation_field_list(
+        field_definitions, reader.get_field_names()
+    )
+
     # Validate length of 'term_name'.
     row_errors = []
     # Set this to True if we find any geolocation fields in the CSV file, so we can report at the end of the checks whether geolocation field validation was performed.
@@ -1927,10 +2018,12 @@ def _task_specific_checks_update_terms(
     # Set this to True if we find any EDTF fields in the CSV file, so we can report at the end of the checks whether EDTF field validation was performed.
     is_edtf_fields_present = False
     # Set this to True if we find any taxonomy term reference fields in the CSV file, so we can report at the end of the checks whether taxonomy term reference field validation was performed.
-    is_taxonomy_fields_present = False
+    is_taxonomy_fields_present = len(taxonomy_reference_fields_present) > 0
     # Set this to True if we find any taxonomy term reference fields in the CSV file that have term IDs/names that do not exist in their respective vocabularies, so we can report at the end of the checks whether there are taxonomy term reference field values that will require new terms to be created.
     has_new_taxonomy_terms: bool = False
-    is_typed_relation_reference_fields_present = False
+    # Set this to True if we find any typed relation reference fields in the CSV file, so we can report at the end of the checks whether typed relation reference field validation was performed.
+    is_typed_relation_reference_fields_present = len(typed_relation_fields_present) > 0
+    has_new_typed_relation_terms = False
 
     for count, row in enumerate(reader.get_csv_data(), start=1):
         if "term_name" in row and len(row["term_name"]) > 255:
@@ -2002,7 +2095,7 @@ def _task_specific_checks_update_terms(
                         field_value.strip()
                     ):
                         message = (
-                            f'Value in field "{edtf_field}" in row with ID {row["node_id"]} ('
+                            f'Value in field "{edtf_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid EDTF date/time."
                         )
                         row_errors.append((count, message))
@@ -2015,7 +2108,7 @@ def _task_specific_checks_update_terms(
             )
             if len(delimited_field_values) > cardinality_value:
                 message = (
-                    f'CSV field "{cardinality_field}" in record with ID {row["node_id"]} contains more values '
+                    f'CSV field "{cardinality_field}" in record with ID {row[config["id_field"]]} contains more values '
                     + f'than the number of values allowed for that field (max {cardinality_value}). Workbench with add only the first{"" if cardinality_value == 1 else f" {cardinality_value}"} value(s) for that field.'
                 )
                 logging.warning(message)
@@ -2030,7 +2123,7 @@ def _task_specific_checks_update_terms(
                 for field_value in delimited_field_values:
                     if len(field_value) > int(field_definitions[header]["max_length"]):
                         message = (
-                            f'CSV field "{header}" in record with ID {row["node_id"]} contains a value that is '
+                            f'CSV field "{header}" in record with ID {row[config["id_field"]]} contains a value that is '
                             + f'longer ({str(len(field_value))} characters) than allowed for that field ({str(field_definitions[header]["max_length"])}) '
                             + " characters). Workbench will truncate this value prior to populating Drupal."
                         )
@@ -2049,13 +2142,11 @@ def _task_specific_checks_update_terms(
                     ):
                         has_new_taxonomy_terms = True
                 except WorkbenchValidationException as e:
-                    if hasattr(e, "wrapped"):
+                    if e.wrapped:
                         # Wrapped exception is the compilation of one or more validation errors for the individual values in a multi-valued typed relation field.
                         row_errors.append((count, str(e)))
 
-        for typed_relation_reference_field in _generate_typed_relation_field_list(
-            field_definitions, reader.get_field_names()
-        ):
+        for typed_relation_reference_field in typed_relation_fields_present:
             if len(row[typed_relation_reference_field]) > 0:
                 delimited_field_values = row[typed_relation_reference_field].split(
                     config["subdelimiter"]
@@ -2063,15 +2154,17 @@ def _task_specific_checks_update_terms(
                 for field_value in delimited_field_values:
                     if len(field_value.strip()) > 0:
                         try:
-                            workbench_utils.validate_typed_relation_field_value_action(
+                            is_typed_relation_reference_fields_present = True
+                            if workbench_utils.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
                                 field_value.strip(),
                                 row[config["id_field"]],
-                            )
+                            ):
+                                has_new_typed_relation_terms = True
                         except WorkbenchValidationException as e:
-                            if hasattr(e, "wrapped"):
+                            if e.wrapped:
                                 # Wrapped exception is the compilation of one or more validation errors for the individual values in a multi-valued typed relation field.
                                 row_errors.append((count, str(e)))
                             else:
@@ -2104,6 +2197,19 @@ def _task_specific_checks_update_terms(
             logging.info(message)
         if is_edtf_fields_present:
             message = "OK, EDTF field values in the CSV file validate."
+            print(message)
+            logging.info(message)
+        if is_typed_relation_reference_fields_present:
+            message = "OK, term IDs/names used in typed relation fields in the CSV file exist in their respective taxonomies"
+            if has_new_typed_relation_terms and config["allow_adding_terms"]:
+                if config["log_term_creation"] is True:
+                    message += (
+                        " (new terms will be created as noted in the Workbench log)."
+                    )
+                else:
+                    message += ' (new terms will be created but not noted in the Workbench log since "log_term_creation" is set to false).'
+            else:
+                message += "."
             print(message)
             logging.info(message)
         if is_taxonomy_fields_present:
@@ -2166,10 +2272,10 @@ def _task_specific_checks_add_or_update_alt_text(
     row_errors = []
     row_warnings = []
     for row_counter, row in enumerate(reader.get_csv_data(), start=1):
-        if len(row["node_id"]) > 0:
-            node_id = row["node_id"]
+        if len(row[config["id_field"]]) > 0:
+            node_id = row[config["id_field"]]
             parent_node_exists = workbench_utils.ping_node(
-                config, row["node_id"], warn=False
+                config, row[config["id_field"]], warn=False
             )
             if parent_node_exists is False:
                 message = f'Node identified in "node_id" ({node_id}) in row "{row_counter}" of your input CSV cannot be found or accessed.'
@@ -2923,7 +3029,7 @@ def check_input(config: dict, args: Namespace) -> None:
                             )
                             if (
                                 isinstance(extension, str)
-                                and isinstance(registered_extensions, dict)
+                                and media_type_file_field in registered_extensions
                                 and extension
                                 not in registered_extensions[media_type_file_field]
                             ):
@@ -3136,7 +3242,8 @@ def check_input(config: dict, args: Namespace) -> None:
                                     config, media_type, media_type_file_field
                                 )
                                 if (
-                                    extension
+                                    media_type_file_field in registered_extensions
+                                    and extension
                                     not in registered_extensions[media_type_file_field]
                                 ):
                                     message = (
