@@ -2,15 +2,17 @@
  WB_INTEGRATION_TEST_HOST. In most cases, the host URL, credentials, etc. are in a
  configuration file referenced in the test.
 
-This test file contains tests for --check. Files islandora_tests.py, islandora_tests_paged_content.py,
-and islandora_tests_hooks.py also contain tests that interact with an Islandora instance.
+This test file contains tests for --check. Files islandora_test.py, islandora_paged_content_test.py,
+and islandora_hooks_test.py also contain tests that interact with an Islandora instance.
 """
 
 import os
+import sys
 import tempfile
 
 import subprocess
 import re
+from pathlib import Path
 
 import pytest
 import requests
@@ -18,6 +20,7 @@ import json
 import urllib.parse
 import unittest
 
+sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent))
 from workbench_test_class import (
     WorkbenchTest,
     AdminUser,
@@ -318,8 +321,7 @@ class TestUpdateWithMaxNodeTitleLengthCheck(WorkbenchTest):
 
         # Now that we have our node IDs, we write out the CSV file used in --check.
         update_csv_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "max_node_title_length_test",
             "update_max_node_title_length.csv",
         )
@@ -364,8 +366,7 @@ class TestUpdateWithMaxNodeTitleLengthCheck(WorkbenchTest):
         cleanup_paths(
             create_config_file_path,
             os.path.join(
-                self.current_dir,
-                "assets",
+                self.tests_dir, "assets",
                 "max_node_title_length_test",
                 "rollback.csv",
             ),
@@ -451,8 +452,7 @@ class TestTypedRelationBadRelatorCheck(WorkbenchTest):
                     self.temp_dir, "bad_typed_relation_fail.csv.preprocessed.hash"
                 ),
                 os.path.join(
-                    self.current_dir,
-                    "assets",
+                    self.tests_dir, "assets",
                     "typed_relation_test",
                     "input_data",
                     "rollback.csv",
@@ -487,8 +487,7 @@ class TestTypedRelationBadUriCheck(WorkbenchTest):
                 os.path.join(self.temp_dir, "bad_uri_fail.csv.preprocessed"),
                 os.path.join(self.temp_dir, "bad_uri_fail.csv.preprocessed.hash"),
                 os.path.join(
-                    self.current_dir,
-                    "assets",
+                    self.tests_dir, "assets",
                     "typed_relation_test",
                     "input_data",
                     "rollback.csv",
@@ -522,8 +521,7 @@ class TestTypedRelationNewTypedRelationCheck(WorkbenchTest):
                 os.path.join(self.temp_dir, "new_typed_relation.csv.preprocessed"),
                 os.path.join(self.temp_dir, "new_typed_relation.csv.preprocessed.hash"),
                 os.path.join(
-                    self.current_dir,
-                    "assets",
+                    self.tests_dir, "assets",
                     "typed_relation_test",
                     "input_data",
                     "rollback.csv",
@@ -559,8 +557,7 @@ class TestTypedRelationNoNamespaceCheck(WorkbenchTest):
                 os.path.join(self.temp_dir, "no_namespace.csv.preprocessed"),
                 os.path.join(self.temp_dir, "no_namespace.csv.preprocessed.hash"),
                 os.path.join(
-                    self.current_dir,
-                    "assets",
+                    self.tests_dir, "assets",
                     "typed_relation_test",
                     "input_data",
                     "rollback.csv",
@@ -655,8 +652,7 @@ class TestHeaderColumnMismatchCheck(WorkbenchTest):
                 os.path.join(self.temp_dir, "metadata.csv.preprocessed"),
                 os.path.join(self.temp_dir, "metadata.csv.preprocessed.hash"),
                 os.path.join(
-                    self.current_dir,
-                    "assets",
+                    self.tests_dir, "assets",
                     "header_column_mismatch_test",
                     "rollback.csv",
                 ),
@@ -791,7 +787,7 @@ class TestTaxonomies(WorkbenchTest):
             os.path.join(
                 self.temp_dir, "term_name_not_in_taxonomy.csv.preprocessed.hash"
             ),
-            os.path.join(self.current_dir, "assets", "taxonomies_test", "rollback.csv"),
+            os.path.join(self.test_dir, "assets", "taxonomies_test", "rollback.csv"),
         )
 
     def test_validate_term_names_exist(self, taxonomy_setup, workbench_user):
@@ -965,8 +961,7 @@ class TestCreateAllowMissingFiles(WorkbenchTest):
         )
         stdout, stderr = proc.communicate()
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "allow_missing_files_false.log",
         )
@@ -1004,8 +999,7 @@ class TestCreateAllowMissingFiles(WorkbenchTest):
         output = subprocess.check_output(cmd, cwd=self.workbench_dir)
         output = output.decode().strip()
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "allow_missing_files_true.log",
         )
@@ -1046,8 +1040,7 @@ class TestCreateAllowMissingFiles(WorkbenchTest):
         output = subprocess.check_output(cmd, cwd=self.workbench_dir)
         output = output.decode().strip()
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "allow_missing_files_false_with_soft_checks.log",
         )
@@ -1103,8 +1096,7 @@ class TestCreateAllowMissingFilesWithAdditionalFiles(WorkbenchTest):
         )
         stdout, stderr = proc.communicate()
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "additional_files_allow_missing_files_false.log",
         )
@@ -1156,8 +1148,7 @@ class TestCreateAllowMissingFilesWithAdditionalFiles(WorkbenchTest):
         output = subprocess.check_output(cmd, cwd=self.workbench_dir)
         output = output.decode().strip()
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "additional_files_allow_missing_files_true.log",
         )
@@ -1215,8 +1206,7 @@ class TestCreateAllowMissingFilesWithAdditionalFiles(WorkbenchTest):
         )
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "additional_files_allow_missing_files_false_with_soft_checks.log",
         )
@@ -1266,8 +1256,7 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
         configuration = workbench_user.alter_configuration(configuration)
         create_config_file_path = self.write_config_and_get_path(configuration)
         create_log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_create_nodes.log",
         )
@@ -1281,8 +1270,7 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
         nids = collect_nids_from_create_output(create_output)
 
         add_media_csv_template_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media.csv.template",
         )
@@ -1325,8 +1313,7 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
             create_config_file_path,
             add_media_csv_file_path,
             os.path.join(
-                self.current_dir,
-                "assets",
+                self.tests_dir, "assets",
                 "allow_missing_files_test",
                 "rollback.csv",
             ),
@@ -1363,8 +1350,7 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
         stdout, stderr = proc.communicate()
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_allow_missing_files_false.log",
         )
@@ -1415,8 +1401,7 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
         output = output.decode().strip()
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_allow_missing_files_true.log",
         )
@@ -1463,8 +1448,7 @@ class TestAddMediaAllowMissingFiles(WorkbenchTest):
         output = output.decode().strip()
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_allow_missing_files_false_with_soft_checks.log",
         )
@@ -1523,8 +1507,7 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
         create_config_file_path = self.write_config_and_get_path(configuration)
 
         create_log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_create_nodes.log",
         )
@@ -1540,8 +1523,7 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
         nids = collect_nids_from_create_output(create_output)
 
         add_media_csv_template_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_additional_files.csv.template",
         )
@@ -1594,8 +1576,7 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
                 self.temp_dir, "add_media_additional_files.csv.preprocessed.hash"
             ),
             os.path.join(
-                self.current_dir,
-                "assets",
+                self.tests_dir, "assets",
                 "allow_missing_files_test",
                 "rollback.csv",
             ),
@@ -1628,8 +1609,7 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
         stdout, stderr = proc.communicate()
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_additional_files_allow_missing_files_false.log",
         )
@@ -1689,8 +1669,7 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
         output = output.decode().strip()
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_additional_files_allow_missing_files_true.log",
         )
@@ -1746,8 +1725,7 @@ class TestAddMediaAllowMissingWithAdditionalFiles(WorkbenchTest):
         output = output.decode().strip()
 
         log_file_path = os.path.join(
-            self.current_dir,
-            "assets",
+            self.tests_dir, "assets",
             "allow_missing_files_test",
             "add_media_additional_files_allow_missing_files_false_with_soft_checks.log",
         )
@@ -1852,8 +1830,7 @@ class TestCommentedCsvs(WorkbenchTest):
                 os.path.join(self.temp_dir, "google_sheet.csv.preprocessed"),
                 os.path.join(self.temp_dir, "google_sheet.csv.preprocessed.hash"),
                 os.path.join(
-                    self.current_dir,
-                    "assets",
+                    self.tests_dir, "assets",
                     "commented_csvs_test",
                     "google_sheet.csv",
                 ),
