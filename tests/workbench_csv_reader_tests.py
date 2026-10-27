@@ -3,6 +3,7 @@ import csv
 import sys
 import tempfile
 from functools import partial
+from json import JSONDecodeError
 
 import pytest
 from pathlib import Path
@@ -162,29 +163,27 @@ def test_commented_rows_are_skipped(
         ],
     )
 
-    if not csv_reader_factory.is_class_based:
-        pytest.skip(
-            "Legacy function throws an unexpected JSONDecodeError when trying to resolve the URL #1."
-        )
-
     base_config["input_csv"] = "input.csv"
-
-    rows = benchmark(partial(process_csv, csv_reader_factory, base_config))
-
-    assert len(rows) == 1
-    assert rows[0]["node_id"] == "2"
+    if not csv_reader_factory.is_class_based:
+        with pytest.raises(JSONDecodeError):
+            csv_reader_factory(base_config)
+    else:
+        rows = benchmark(partial(process_csv, csv_reader_factory, base_config))
+        assert len(rows) == 1
+        assert rows[0]["node_id"] == "2"
 
 
 def test_missing_csv_exits(base_config, csv_reader_factory):
     """Test that processing exits when the input CSV file is missing."""
     if not csv_reader_factory.is_class_based:
-        pytest.skip(
-            "Legacy function throws an unexpected FileNotFoundError when trying to open the missing file."
-        )
-
-    with patch.object(sys, "exit") as exit_mock:
-        csv_reader_factory(base_config)
-        exit_mock.assert_called_once()
+        with patch.object(sys, "exit") as exit_mock:
+            with pytest.raises(FileNotFoundError):
+                csv_reader_factory(base_config)
+            exit_mock.assert_called_once()
+    else:
+        with patch.object(sys, "exit") as exit_mock:
+            csv_reader_factory(base_config)
+            exit_mock.assert_called_once()
 
 
 def test_duplicate_headers_exit(tmp_path, base_config, csv_reader_factory):
@@ -232,10 +231,10 @@ def test_missing_required_id_column_exits(tmp_path, base_config, csv_reader_fact
             in str(excinfo.value)
         )
     else:
-        pytest.skip("Legacy function throws an unexpected KeyError.")
         # legacy function
         with patch.object(sys, "exit") as exit_mock:
-            list(csv_reader_factory(base_config))
+            with pytest.raises(KeyError):
+                list(csv_reader_factory(base_config))
             exit_mock.assert_called_once()
 
 

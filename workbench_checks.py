@@ -754,8 +754,14 @@ def _task_specific_checks_create(
     required_drupal_fields_node = workbench_utils.get_required_bundle_fields(
         config, "node", config["content_type"]
     )
-    missing_required_fields = [k for k in required_drupal_fields_node if k not in csv_column_headers]
-    if "field_model" in missing_required_fields and config["paged_content_from_directories_parents_exist"] is True and config.get("paged_content_page_model_tid") is not None:
+    missing_required_fields = [
+        k for k in required_drupal_fields_node if k not in csv_column_headers
+    ]
+    if (
+        "field_model" in missing_required_fields
+        and config["paged_content_from_directories_parents_exist"] is True
+        and config.get("paged_content_page_model_tid") is not None
+    ):
         # If we are ingesting paged content from directories and the parent nodes already exist, we don't need to require the field_model field in the CSV file.
         missing_required_fields.remove("field_model")
     if missing_required_fields:
@@ -1340,7 +1346,7 @@ def _task_specific_checks_update(
                         field_value.strip()
                     ):
                         message = (
-                                f'Value in field "{edtf_field}" in row with ID {row[config["id_field"]]} ('
+                            f'Value in field "{edtf_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid EDTF date/time."
                         )
                         row_errors.append((row_num, message))
@@ -1518,7 +1524,9 @@ def _task_specific_checks_update_media_by_node(
                 f'Matching media on node {row[config["id_field"]]} (media ID {node_media_ids[0]}) will be updated.'
             )
         elif len(node_media_ids) == 0:
-            logging.warning(f'No matching media on node {row[config["id_field"]]} found.')
+            logging.warning(
+                f'No matching media on node {row[config["id_field"]]} found.'
+            )
         else:
             logging.warning(
                 f'Multiple matching media on node {row[config["id_field"]]} found, with media IDs {", ".join([str(x) for x in node_media_ids]).strip()}. Workbench can only update one media per node at a time.'
@@ -1555,7 +1563,9 @@ def _task_specific_checks_add_media(
         fixity_message = "Performing local checksum validation."
         logging.info(fixity_message)
         print(fixity_message + " This might take some time.")
-        row_id = "node_id"  # The id field for add_media is "node_id", not sure why there was
+        row_id = (
+            "node_id"  # The id field for add_media is "node_id", not sure why there was
+        )
 
     # Validate config setting of "media_use_tid" first
     workbench_utils.validate_media_use_tid(config)
@@ -1564,16 +1574,20 @@ def _task_specific_checks_add_media(
     for count, row in enumerate(csv_data, start=1):
         try:
             if "media_use_tid" in row:
-                delimited_field_values = row["media_use_tid"].split(config["subdelimiter"])
+                delimited_field_values = row["media_use_tid"].split(
+                    config["subdelimiter"]
+                )
                 for field_value in delimited_field_values:
                     if len(field_value.strip()) > 0:
-                        workbench_utils.validate_media_use_tid(config, field_value, row[config["id_field"]])
+                        workbench_utils.validate_media_use_tid(
+                            config, field_value, row[config["id_field"]]
+                        )
 
-            if config["validate_fixity_during_check"] and config["fixity_algorithm"] is not None:
-                if (
-                    "file" in row
-                    and "checksum" in row
-                ):
+            if (
+                config["validate_fixity_during_check"]
+                and config["fixity_algorithm"] is not None
+            ):
+                if "file" in row and "checksum" in row:
                     file_name = row["file"]
                     file_and_checksum_in_csv = True
                     if not file_name.lower().startswith("http"):
@@ -1605,9 +1619,11 @@ def _task_specific_checks_add_media(
                                 )
                 else:
                     file_and_checksum_in_csv = False
-                    logging.warning(f"Could not validate checksum for row {row[config['id_field']]}")
+                    logging.warning(
+                        f"Could not validate checksum for row {row[config['id_field']]}"
+                    )
         except WorkbenchValidationException as e:
-            row_errors.append((row[config['id_field']], str(e)))
+            row_errors.append((row[config["id_field"]], str(e)))
 
         if file_and_checksum_in_csv:
             if checksum_validation_all_ok:
@@ -1631,13 +1647,15 @@ def _task_specific_checks_add_media(
 
         if len(row_errors) > 0:
             error_messages = "\n".join(
-                [f"Row {row_num}: {error_message}" for row_num, error_message in row_errors]
+                [
+                    f"Row {row_num}: {error_message}"
+                    for row_num, error_message in row_errors
+                ]
             )
             logging.error(f"Errors found in CSV data:\n{error_messages}")
             sys.exit(
                 f"Error: Errors found in CSV data. See log for more detail.\n{error_messages}"
             )
-
 
 
 def _task_specific_checks_create_terms(

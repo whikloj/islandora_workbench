@@ -1813,7 +1813,9 @@ def get_registered_media_extensions(
                 ][i].lower()
 
     if field_name_filter is not None:
-        return {k: v for k, v in registered_extensions.items() if k == field_name_filter}
+        return {
+            k: v for k, v in registered_extensions.items() if k == field_name_filter
+        }
     else:
         return registered_extensions
 
@@ -3701,7 +3703,9 @@ class WorkbenchCsvReader:
     configuration settings and caches it to avoid re-reading from disk each time."""
 
     _initialized: bool = False  # Whether the reader has been initialized.
-    _config_hash: str = None  # Hash of the settings the preprocessed file was made with.
+    _config_hash: str = (
+        None  # Hash of the settings the preprocessed file was made with.
+    )
     _cached_source_file_path: str = None  # Path to the original source CSV file path.
     # Whether commented out rows were present.
     _commented_out_input_csv_rows_present = False
@@ -3737,17 +3741,15 @@ class WorkbenchCsvReader:
         self._get_config_hash()
 
     def _get_config_hash(self) -> str:
-        """
-        Generate a hash based on:
--        - Source file path
--        - The csv_file_target
--        - The entire current configuration, sorted to avoid ordering issues
+        """Generate a hash based on:
+            - Source file path
+            - The csv_file_target
+            - The entire current configuration, sorted to avoid ordering issues
 
         It is stored next to the preprocessed CSV file with the same filename and ".hash" appended.
         (i.e. temp/some_file_name.csv.preprocessed will have temp/some_file_name.csv.preprocessed.hash).
 
-        Returns:
-            :return: str - The hash.
+        :return: str - The hash.
         """
         if self._config_hash is None:
             effective_config = {
@@ -5929,7 +5931,12 @@ def validate_required_fields_have_values_action(
     :param row: dict - The CSV row.
     """
     for required_field in required_fields:
-        if required_field == "field_model" and config["paged_content_from_directories_parents_exist"] is True and "paged_content_page_model_tid" in config.keys() and config["paged_content_page_model_tid"] is not None:
+        if (
+            required_field == "field_model"
+            and config["paged_content_from_directories_parents_exist"] is True
+            and "paged_content_page_model_tid" in config.keys()
+            and config["paged_content_page_model_tid"] is not None
+        ):
             continue
         if required_field not in row or len(row[required_field].strip()) == 0:
             message = f"Required Drupal field \"{required_field}\" in row with ID \"{row[config['id_field']]}\" is empty."
