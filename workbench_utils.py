@@ -1841,19 +1841,23 @@ def replace_field_labels_with_names(config: dict, csv_headers: list) -> list:
     return csv_headers
 
 
-def check_for_required_config_keys(config: list, required_keys: list):
+def check_for_required_config_keys(config: list, required_keys: list, throw_exception: bool = False):
     """Check that the config file has all required keys.
     Parameters:
         config: (list) The configuration settings defined by workbench_config.get_config().
         required_keys: (list) A list of required keys that must be present in the config.
     Returns:
         None
+    :raise KeyError: If any required keys are missing and throw_exception is True.
     """
     missing_keys = [k for k in required_keys if k not in config]
     if len(missing_keys) > 0:
-        message = f"Please check your config file for required values: {', '.join(required_keys)}."
-        logging.error(message)
-        sys.exit("Error: " + message)
+        if throw_exception:
+            raise KeyError(f"Missing required config keys: {', '.join(missing_keys)}")
+        else:
+            message = f"Please check your config file for required values: {', '.join(required_keys)}."
+            logging.error(message)
+            sys.exit("Error: " + message)
 
 
 # TODO: This function is very important and also over 2400 lines long. Can it be refactored into smaller pieces?
