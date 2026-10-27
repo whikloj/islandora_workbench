@@ -1,11 +1,12 @@
 import os
 import sys
 
+from islandora_workbench.tasks import register_task
 from islandora_workbench.tasks.base import Task
 from workbench_utils import check_for_required_config_keys, is_running_in_docker, value_is_numeric, \
     check_rollback_file_path_directories
 
-
+@register_task("create_from_files")
 class CreateFromFilesTask(Task):
     def __init__(self, ctx: dict):
         super().__init__(ctx)
