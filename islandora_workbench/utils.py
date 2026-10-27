@@ -51,9 +51,12 @@ class Reporter:
             log_message = message
         if level == "info":
             self.logger.info(log_message)
+        elif level == "warning":
+            self.logger.warning(log_message)
         elif level == "error":
             self.logger.error(log_message)
         elif level == "debug":
             self.logger.debug(log_message)
         if not log_only:
-            self.console(message)
+            # Prepend the level to the message for console output (i.e. info => Info, error => Error, etc.)
+            self.console(level[0].upper() + level[1:] + ": " + message)

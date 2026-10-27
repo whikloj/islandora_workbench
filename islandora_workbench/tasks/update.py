@@ -1,6 +1,7 @@
 import os
 import sys
 
+from islandora_workbench.tasks import register_task
 from islandora_workbench.tasks.base import Task
 from workbench_utils import check_for_required_config_keys, get_csv_data, check_csv_file_exists, \
     replace_field_labels_with_names, validate_url_aliases, get_field_definitions, validate_geolocation_fields, \
@@ -9,7 +10,7 @@ from workbench_utils import check_for_required_config_keys, get_csv_data, check_
     validate_typed_relation_field_values, validate_numeric_fields, validate_media_track_fields, ping_node, \
     get_entity_reference_view_endpoints, ping_view_endpoint, validate_language_code
 
-
+@register_task("update")
 class UpdateTask(Task):
     def rows(self):
         pass
