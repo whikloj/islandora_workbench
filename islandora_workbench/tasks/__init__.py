@@ -1,5 +1,5 @@
 
-from . import create
+from . import create, create_from_files, update, delete
 
 # Task registry to hold all the tasks registered by decorators
 task_registry = {}
