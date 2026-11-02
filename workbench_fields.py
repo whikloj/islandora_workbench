@@ -11,6 +11,7 @@ by workbench and workbench_utils.py to instantiate the correct class for each fi
 
 from collections import OrderedDict
 
+from islandora_workbench.checks.validation import validate_latlong_value
 from workbench_utils import *
 
 

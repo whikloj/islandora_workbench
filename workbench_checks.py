@@ -12,12 +12,12 @@ import requests
 import workbench_utils
 import sys
 
-from workbench_exceptions import WorkbenchValidationException
+from islandora_workbench.checks import validation
+from islandora_workbench.data_io import csv_data
+from islandora_workbench.exceptions import WorkbenchValidationException
 from workbench_utils import (
     ping_islandora,
-    check_integration_module_version,
-    WorkbenchCsvReader,
-    get_entity_fields,
+    check_integration_module_version, get_entity_fields,
     check_rollback_file_path_directories,
     check_for_required_config_keys,
     create_temp_dir,
@@ -42,14 +42,14 @@ from workbench_utils import (
     validate_media_use_tid_in_additional_files_setting,
     check_file_exists,
     paged_content_ignore_file,
-    get_sequence_indicator_from_filename,
-    validate_weight_value,
-    file_is_utf8,
+    get_sequence_indicator_from_filename, file_is_utf8,
     ping_media,
     ping_term,
     get_file_hash_from_local,
     generate_contact_sheet_from_csv,
 )
+from islandora_workbench.data_io.csv_data import CsvReader
+from islandora_workbench.checks.validation import validate_weight_value
 
 
 def check(self):
@@ -309,7 +309,7 @@ def _check_media_csv_headers(config: dict, csv_headers: list):
 
 
 def task_specific_checks(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader, reserved_fields: list
+    config: dict, reader: csv_data.CsvReader, reserved_fields: list
 ):
     """Perform checks specific to the task defined in the configuration file. These checks are in addition to the more general checks performed in _simple_config_checks() and _check_host_values().
     Parameters
@@ -394,7 +394,7 @@ def _generate_authority_link_field_list(
     )
 
 
-def _generate_edtf_field_lists(
+def _generate_edtf_field_list(
     field_definitions: dict, field_names_in_csv: list
 ) -> list:
     """Generate a list of EDTF fields that are present in the CSV file.
@@ -462,6 +462,8 @@ def _generate_typed_relation_field_list(
     Parameters:
     :param field_definitions: dict - the field definitions from Drupal
     :param csv_column_headers: list - the list of column headers in the CSV file
+
+    :return: list - a list of typed relation field names that are present in the CSV file
     """
     return [
         key
@@ -471,10 +473,57 @@ def _generate_typed_relation_field_list(
         and key in csv_column_headers
     ]
 
+def _generate_text_with_allowed_field_list(field_definitions: dict, csv_column_headers: list) -> dict:
+    """Generate a list of fields that have allowed values defined in their field definitions and are present in the CSV file.
+    :param field_definitions: dict - the field definitions from Drupal
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    :return: dict - a dictionary where keys are field names and values are their corresponding allowed values
+    """
+    return {
+        key: field_definitions[key]["allowed_values"]
+        for key in csv_column_headers
+        if key in field_definitions and "allowed_values" in field_definitions[key] and field_definitions[key]["allowed_values"] is not None
+        }
+
+def _generate_max_length_field_list(field_definitions: dict, csv_column_headers: list) -> dict:
+    """Generate a dictionary of fields that have a max_length defined in their field definitions and are present in the CSV file.
+    :param field_definitions: dict - the field definitions from Drupal
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    :return: dict - a dictionary where keys are field names and values are their corresponding max_length values
+    """
+    return {
+        key: field_definitions[key]["max_length"]
+        for key in csv_column_headers
+        if key in field_definitions and "max_length" in field_definitions[key] and field_definitions[key]["max_length"] is not None
+    }
+
+def _generate_numeric_field_list(field_definitions: dict, csv_column_headers: list) -> dict:
+    """Generate a list of numeric fields that are present in the CSV file.
+    :param field_definitions: dict - the field definitions from Drupal
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    :return: dict - a dictionary where keys are field names and values are whether it is a decimal containing field
+    """
+    return {
+        key: field_definitions[key]["field_type"] in ["decimal", "float"]
+        for key in csv_column_headers
+        if key in field_definitions and "field_type" in field_definitions[key] and field_definitions[key]["field_type"] in ["decimal", "float", "integer"]
+    }
+
+def _generate_media_field_list(config: dict, csv_column_headers: list) -> dict:
+    """Generate a list of media fields that are present in the CSV file.
+    :param config: dict - The configuration dictionary.
+    :param csv_column_headers: list - the list of column headers in the CSV file
+    :return: dict - a dictionary where keys are field names and values are media bundles parsed from the field_name
+    """
+    return {
+        k: k.split(":")[1]
+        for k in csv_column_headers
+        if k.startswith("media:")
+    }
 
 def _task_specific_checks_create(
     config: dict,
-    reader: workbench_utils.WorkbenchCsvReader,
+    reader: csv_data.CsvReader,
     reserved_fields: list,
     node_base_fields: list,
     csv_column_headers: list,
@@ -859,19 +908,19 @@ def _task_specific_checks_create(
         try:
             if "created" in csv_column_headers:
                 # Validate dates in 'created' field, if present.
-                workbench_utils.validate_node_created_date_action(config, row)
+                validation.validate_node_created_date_action(config, row)
         except WorkbenchValidationException as e:
             rows_with_errors.append((row_num, str(e)))
 
         try:
             if "uid" in csv_column_headers:
-                workbench_utils.validate_node_uid_action(config, row)
+                validation.validate_node_uid_action(config, row)
         except WorkbenchValidationException as e:
             rows_with_errors.append((row_num, str(e)))
 
         try:
             if "url_alias" in csv_column_headers:
-                workbench_utils.validate_url_aliases_action(config, row)
+                validation.validate_url_aliases_action(config, row)
         except WorkbenchValidationException as e:
             rows_with_errors.append((row_num, str(e)))
 
@@ -939,7 +988,7 @@ def _task_specific_checks_create(
             if geolocation_field in row and len(row[geolocation_field]) > 0:
                 is_geolocation_fields_present = True
                 try:
-                    workbench_utils.validate_geolocation_fields_action(
+                    validation.validate_geolocation_fields_action(
                         config, row, geolocation_field
                     )
                 except WorkbenchValidationException as e:
@@ -955,7 +1004,7 @@ def _task_specific_checks_create(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_link_value(field_value):
+                    ) > 0 and not validation.validate_link_value(field_value):
                         message = (
                             f'Value in field "{link_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid link field value."
@@ -974,7 +1023,7 @@ def _task_specific_checks_create(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_authority_link_value(
+                    ) > 0 and not validation.validate_authority_link_value(
                         field_value.strip(),
                         field_definitions[authority_link_field]["authority_sources"],
                     ):
@@ -984,7 +1033,7 @@ def _task_specific_checks_create(
                         )
                         rows_with_errors.append((row_num, message))
 
-        for edtf_field in _generate_edtf_field_lists(
+        for edtf_field in _generate_edtf_field_list(
             field_definitions, reader.get_field_names()
         ):
             if edtf_field in row and len(row[edtf_field]) > 0:
@@ -1021,7 +1070,7 @@ def _task_specific_checks_create(
             if len(row[taxonomy_reference_field]) > 0:
                 try:
                     is_taxonomy_fields_present = True
-                    if workbench_utils.validate_taxonomy_reference_value_action(
+                    if validation.validate_taxonomy_reference_value_action(
                         config,
                         field_definitions,
                         taxonomy_reference_field,
@@ -1043,7 +1092,7 @@ def _task_specific_checks_create(
                     if len(field_value.strip()) > 0:
                         try:
                             is_typed_relation_reference_fields_present = True
-                            if workbench_utils.validate_typed_relation_field_value_action(
+                            if validation.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
@@ -1168,7 +1217,7 @@ def _task_specific_checks_create(
 
 def _task_specific_checks_update(
     config: dict,
-    reader: workbench_utils.WorkbenchCsvReader,
+    reader: csv_data.CsvReader,
     node_base_fields: list,
     csv_column_headers: list,
 ):
@@ -1277,7 +1326,7 @@ def _task_specific_checks_update(
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
         try:
             if "url_alias" in csv_column_headers:
-                workbench_utils.validate_url_aliases_action(config, row)
+                validation.validate_url_aliases_action(config, row)
         except WorkbenchValidationException as e:
             row_errors.append((row_num, str(e)))
 
@@ -1287,7 +1336,7 @@ def _task_specific_checks_update(
             if geolocation_field in row and len(row[geolocation_field]) > 0:
                 is_geolocation_fields_present = True
                 try:
-                    workbench_utils.validate_geolocation_fields_action(
+                    validation.validate_geolocation_fields_action(
                         config, row, geolocation_field
                     )
                 except WorkbenchValidationException as e:
@@ -1303,7 +1352,7 @@ def _task_specific_checks_update(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_link_value(field_value):
+                    ) > 0 and not validation.validate_link_value(field_value):
                         message = (
                             f'Value in field "{link_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid link field value."
@@ -1322,7 +1371,7 @@ def _task_specific_checks_update(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_authority_link_value(
+                    ) > 0 and not validation.validate_authority_link_value(
                         field_value.strip(),
                         field_definitions[authority_link_field]["authority_sources"],
                     ):
@@ -1332,7 +1381,7 @@ def _task_specific_checks_update(
                         )
                         row_errors.append((row_num, message))
 
-        for edtf_field in _generate_edtf_field_lists(
+        for edtf_field in _generate_edtf_field_list(
             field_definitions, reader.get_field_names()
         ):
             if edtf_field in row and len(row[edtf_field]) > 0:
@@ -1368,7 +1417,7 @@ def _task_specific_checks_update(
         for taxonomy_reference_field in taxonomy_reference_fields_present:
             if len(row[taxonomy_reference_field]) > 0:
                 try:
-                    if workbench_utils.validate_taxonomy_reference_value_action(
+                    if validation.validate_taxonomy_reference_value_action(
                         config,
                         field_definitions,
                         taxonomy_reference_field,
@@ -1390,7 +1439,7 @@ def _task_specific_checks_update(
                     if len(field_value.strip()) > 0:
                         try:
                             is_typed_relation_reference_fields_present = True
-                            if workbench_utils.validate_typed_relation_field_value_action(
+                            if validation.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
@@ -1477,7 +1526,7 @@ def _task_specific_checks_update(
 
 
 def _task_specific_checks_update_media(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader
+    config: dict, reader: csv_data.CsvReader
 ):
     """Checks specific to "update_media" tasks. Note that some checks are the same as for "create_media tasks, but there are also some differences, so we have a separate function for "update_media" task checks.
     Parameters
@@ -1505,7 +1554,7 @@ def _task_specific_checks_update_media(
 
 
 def _task_specific_checks_update_media_by_node(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader
+    config: dict, reader: csv_data.CsvReader
 ):
     """Checks specific to "update_media_by_node" tasks. Note that some checks are the same as for "create_media tasks, but there are also some differences, so we have a separate function for "update_media_by_node" task checks.
     Parameters
@@ -1534,7 +1583,7 @@ def _task_specific_checks_update_media_by_node(
 
 
 def _task_specific_checks_add_media(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader
+    config: dict, reader: csv_data.CsvReader
 ):
     """Checks specific to "add_media" tasks. Note that some checks are the same as for "create_media tasks, but there are also some differences, so we have a separate function for add_media" task checks.
     Parameters
@@ -1659,7 +1708,7 @@ def _task_specific_checks_add_media(
 
 
 def _task_specific_checks_create_terms(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader, csv_headers: list
+    config: dict, reader: csv_data.CsvReader, csv_headers: list
 ):
     """Checks specific to "create_terms" tasks.
     Parameters
@@ -1750,7 +1799,7 @@ def _task_specific_checks_create_terms(
             if geolocation_field in row and len(row[geolocation_field]) > 0:
                 is_geolocation_fields_present = True
                 try:
-                    workbench_utils.validate_geolocation_fields_action(
+                    validation.validate_geolocation_fields_action(
                         config, row, geolocation_field
                     )
                 except WorkbenchValidationException as e:
@@ -1766,7 +1815,7 @@ def _task_specific_checks_create_terms(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_link_value(field_value):
+                    ) > 0 and not validation.validate_link_value(field_value):
                         message = (
                             f'Value in field "{link_field}" in row with ID {row[config["id_field"]]} ('
                             + f"{field_value}) is not a valid link field value."
@@ -1785,7 +1834,7 @@ def _task_specific_checks_create_terms(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_authority_link_value(
+                    ) > 0 and not validation.validate_authority_link_value(
                         field_value.strip(),
                         field_definitions[authority_link_field]["authority_sources"],
                     ):
@@ -1795,7 +1844,7 @@ def _task_specific_checks_create_terms(
                         )
                         row_errors.append((count, message))
 
-        for edtf_field in _generate_edtf_field_lists(
+        for edtf_field in _generate_edtf_field_list(
             field_definitions, reader.get_field_names()
         ):
             if edtf_field in row and len(row[edtf_field]) > 0:
@@ -1847,7 +1896,7 @@ def _task_specific_checks_create_terms(
         for taxonomy_reference_field in taxonomy_reference_fields_present:
             if len(row[taxonomy_reference_field]) > 0:
                 try:
-                    if workbench_utils.validate_taxonomy_reference_value_action(
+                    if validation.validate_taxonomy_reference_value_action(
                         config,
                         field_definitions,
                         taxonomy_reference_field,
@@ -1869,7 +1918,7 @@ def _task_specific_checks_create_terms(
                     if len(field_value.strip()) > 0:
                         try:
                             is_typed_relation_reference_fields_present = True
-                            if workbench_utils.validate_typed_relation_field_value_action(
+                            if validation.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
@@ -1952,7 +2001,7 @@ def _task_specific_checks_create_terms(
 
 
 def _task_specific_checks_update_terms(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader, csv_column_headers: list
+    config: dict, reader: csv_data.CsvReader, csv_column_headers: list
 ):
     """Checks specific to "update_terms" tasks.
     Parameters
@@ -2058,7 +2107,7 @@ def _task_specific_checks_update_terms(
             if geolocation_field in row and len(row[geolocation_field]) > 0:
                 is_geolocation_fields_present = True
                 try:
-                    workbench_utils.validate_geolocation_fields_action(
+                    validation.validate_geolocation_fields_action(
                         config, row, geolocation_field
                     )
                 except WorkbenchValidationException as e:
@@ -2070,7 +2119,7 @@ def _task_specific_checks_update_terms(
             if link_field in row and len(row[link_field]) > 0:
                 link_value = row[link_field].strip()
                 is_link_fields_present = True
-                if not workbench_utils.validate_link_value(link_value):
+                if not validation.validate_link_value(link_value):
                     message = (
                         f'Value in field "{link_field}" in row with ID {row[config["id_field"]]} ('
                         + f"{link_value}) is not a valid link field value."
@@ -2089,7 +2138,7 @@ def _task_specific_checks_update_terms(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_authority_link_value(
+                    ) > 0 and not validation.validate_authority_link_value(
                         field_value.strip(),
                         field_definitions[authority_link_field]["authority_sources"],
                     ):
@@ -2099,7 +2148,7 @@ def _task_specific_checks_update_terms(
                         )
                         row_errors.append((count, message))
 
-        for edtf_field in _generate_edtf_field_lists(
+        for edtf_field in _generate_edtf_field_list(
             field_definitions, reader.get_field_names()
         ):
             if edtf_field in row and len(row[edtf_field]) > 0:
@@ -2151,7 +2200,7 @@ def _task_specific_checks_update_terms(
         for taxonomy_reference_field in taxonomy_reference_fields_present:
             if len(row[taxonomy_reference_field]) > 0:
                 try:
-                    if workbench_utils.validate_taxonomy_reference_value_action(
+                    if validation.validate_taxonomy_reference_value_action(
                         config,
                         field_definitions,
                         taxonomy_reference_field,
@@ -2173,7 +2222,7 @@ def _task_specific_checks_update_terms(
                     if len(field_value.strip()) > 0:
                         try:
                             is_typed_relation_reference_fields_present = True
-                            if workbench_utils.validate_typed_relation_field_value_action(
+                            if validation.validate_typed_relation_field_value_action(
                                 config,
                                 field_definitions,
                                 typed_relation_reference_field,
@@ -2260,7 +2309,7 @@ def _task_specific_checks_update_terms(
 
 
 def _task_specific_checks_add_or_update_alt_text(
-    config: dict, reader: workbench_utils.WorkbenchCsvReader
+    config: dict, reader: csv_data.CsvReader
 ):
     """Checks specific to "add_alt_text" or "update_alt_text" tasks.
     Parameters
@@ -2366,7 +2415,7 @@ def check_input(config: dict, args: Namespace) -> None:
     check_integration_module_version(config, log_success=False)
 
     rows_with_missing_files = list()
-    csv_reader = WorkbenchCsvReader(config)
+    csv_reader = CsvReader(config)
 
     # @todo #606: break out node entity and reserved field, media entity and reserved field, and term entity and reserved fields?
     node_base_fields = [
@@ -2501,7 +2550,7 @@ def check_input(config: dict, args: Namespace) -> None:
     check_csv_file_exists(config, "node_fields")
 
     # Check column headers in CSV file. Does not apply to add_media or update_media/update_media_by_node tasks (handled just below).
-    csv_reader = WorkbenchCsvReader(config)
+    csv_reader = CsvReader(config)
 
     langcode_was_present = False
 

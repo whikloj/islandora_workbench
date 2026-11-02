@@ -1,10 +1,3 @@
-import os
-import sys
-import json
-import logging
-import datetime
-import collections
-import requests_cache
 from workbench_utils import *
 from progress_bar import InitBar
 
@@ -233,7 +226,7 @@ class WorkbenchExportBase:
 class CSVExporter(WorkbenchExportBase):
     def __init__(self, config, args=None):
         super().__init__(config, args)
-        reader = WorkbenchCsvReader(config)
+        reader = CsvReader(config)
         self.csv_data = reader.get_csv_data()
         self.required_fields = [
             "created",

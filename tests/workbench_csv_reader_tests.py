@@ -13,10 +13,9 @@ from pytest_benchmark.plugin import benchmark
 
 sys.path.append(str(Path(__file__).parent.parent))
 from workbench_utils import (
-    get_csv_data,
-    WorkbenchCsvReader,
-    WorkbenchCsvReaderException,
-)
+    get_csv_data, )
+from islandora_workbench.data_io.csv_data import CsvReader
+from islandora_workbench.exceptions import WorkbenchCsvReaderException
 
 
 @pytest.fixture(params=["function", "class"])
@@ -36,7 +35,7 @@ def csv_reader_factory(request):
     else:
 
         def _factory(config):
-            reader = WorkbenchCsvReader(config)
+            reader = CsvReader(config)
             return reader.get_csv_data()
 
         _factory.is_class_based = True

@@ -1,10 +1,14 @@
-import os
-import sys
 from abc import abstractmethod, ABC
-from csv import DictReader
 
-from workbench_utils import get_csv_data, get_entity_fields, validate_input_dir, check_csv_file_exists, \
-    get_preprocessed_input_csv_file_path
+from islandora_workbench.checks.common import common_checks_before_task, common_checks_after_task
+from islandora_workbench.checks.csv_checks import check_row_field_count, ParentPrecedesChildCheck, csv_checks
+from islandora_workbench.data_io.csv_data import CsvReader
+from islandora_workbench.exceptions import WorkbenchValidationException
+from workbench_checks import _generate_geolocation_field_list, _generate_link_field_list, \
+    _generate_authority_link_field_list, _generate_edtf_field_list, _generate_taxonomy_term_reference_field_list, \
+    _generate_typed_relation_field_list, _generate_cardinality_field_list, _generate_max_length_field_list, \
+    _generate_text_with_allowed_field_list, _generate_numeric_field_list, _generate_media_field_list
+from workbench_utils import get_entity_reference_view_endpoints
 
 
 class Task(ABC):
@@ -16,36 +20,116 @@ class Task(ABC):
     ctx: dict
     # configuration keys
     config_keys: list[str]
+    # required fields
+    required_fields: list[str] = []
+    # ID field
+    id_field: str
+    # Does this task use a CSV file? (default: True)
+    uses_csv: bool = True
+    # Are we doing validation (--check)? (default: False)
+    check_mode: bool = False
+    # Field configurations
+    field_configs: dict = {
+        # list of fields that are valid for the entity type and bundle being processed.
+        "entity_fields": [],
+        # entity field definitions for the entity type and bundle being processed.
+        "entity_field_definitions": {},
+        # dictionary of additional files configuration for easy access.
+        "additional_files": {},
+        # dictionary of required fields for the entity type and bundle being processed.
+        "required_bundle_fields": {},
+        # media bundle field definitions
+        "media_bundle_field_definitions": {},
+        # list of base fields for nodes.
+        "node_base_fields": ["title", "status", "promote", "sticky", "uid", "created", "published", ],
+        # list of reserved fields that should not be used as entity fields.
+        "reserved_fields": ["file", "directory", "media_use_tid", "checksum", "node_id", "url_alias", "image_alt_text",
+        "parent_id", "langcode", "revision_log", ],
+    }
+    # Various field types to make validation of these fields that exist easier, see generate_field_lists()
+    field_types: dict = {}
+    # testing flags to allow passing checks run at general check level to the row_check level.
+    testing_flags: dict = {}
 
-    node_base_fields = ["title", "status", "promote", "sticky", "uid", "created", "published", ]
-
-    reserved_fields = ["file", "directory", "media_use_tid", "checksum", "node_id", "url_alias", "image_alt_text",
-        "parent_id", "langcode", "revision_log", ]
-
-    entity_fields: list[str]
 
     def __init__(self, ctx: dict):
         self.ctx = ctx
-        self.entity_fields = get_entity_fields(self.ctx.config, "node", self.ctx.config["content_type"])
-        if self.ctx.config["id_field"] not in self.entity_fields:
-            self.reserved_fields.append(self.ctx.config["id_field"])
+        self.general_setup()
+
+    def general_setup(self):
+        """General setup for all tasks."""
+        self.config_keys = [k for k in self.ctx["config"].keys() if k not in ["check", "check_lock_file_path", "secondary_tasks", "contactsheet", "contact_sheet_output_dir"]]
+
+    def generate_field_lists(self, csv_columns: list):
+        """Generate the lists of the various types of fields that exist in the CSV."""
+        self.field_types["geolocation"] = _generate_geolocation_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["link"] = _generate_link_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["authority_link"] = _generate_authority_link_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["edtf"] = _generate_edtf_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["taxonomy_term_reference"] = _generate_taxonomy_term_reference_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["typed_relation"] = _generate_typed_relation_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["cardinality"] = _generate_cardinality_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["allowed_values"] = _generate_text_with_allowed_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["max_length"] = _generate_max_length_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["numeric_fields"] = _generate_numeric_field_list(self.field_configs["entity_field_definitions"], csv_columns)
+        self.field_types["media_fields"] = _generate_media_field_list(self.ctx["config"], csv_columns)
+        self.field_types["entity_reference_view_endpoints"] = get_entity_reference_view_endpoints(self.ctx["config"]) if "entity_reference_view_endpoints" in self.ctx["config"] else {}
+
+
+    def validate_required_fields(self, csv: CsvReader):
+        """Validate the fields in the CSV against the task requirements.
+        :param csv: CsvReader - The CSV reader object.
+        :raises WorkbenchCsvReaderException: If required fields are missing.
+        """
+        csv_field_names = csv.field_names
+        missing_fields = [field for field in self.required_fields if field not in csv_field_names]
+        if missing_fields:
+            message = f"Required fields {', '.join(missing_fields)} are missing from the CSV file. Please check your input CSV file and try again."
+            self.ctx["log"].error(message)
+            raise WorkbenchValidationException(message)
+
 
     def check(self):
         """Perform task-specific checks, called from checks.run_checks."""
-        self.config_keys = list(self.ctx.config.keys())
-        self.config_keys.remove("check")
+        common_checks_before_task(self.ctx)
+
+        self.general_checks()
+        if self.uses_csv:
+            csv = CsvReader.open(self.ctx['config'])
+            self.ctx["csv"] = csv
+            csv_checks(self.ctx)
+            self.validate_required_fields(csv)
+            self.general_csv_checks()
+            parent_id_checker = ParentPrecedesChildCheck(self.ctx["config"]["id_field"])
+            row_counter = 0
+            for row in csv.rows():
+                row_counter += 1
+                check_row_field_count(self.ctx, row, row_counter)
+                self.check_row(row, row_counter)
+                parent_id_checker.visit(row_counter, row)
+            parent_id_checker.finish()
+        common_checks_after_task(self.ctx)
 
     def prepare(self):
         """Prepare the task for execution. (i.e. rollback files, ID map, csv load, etc.)"""
         pass
 
     @abstractmethod
-    def rows(self):
-        """yields rows after start/stop filtering"""
+    def general_checks(self):
+        """The general checks; each task overrides this."""
+        pass
+
+    def general_csv_checks(self):
+        """The general CSV checks (if necessary); each task CAN override this."""
         pass
 
     @abstractmethod
-    def process_row(self, row):
+    def check_row(self, row: dict, row_number: int):
+        """The per-row checks; each task overrides this."""
+        pass
+
+    @abstractmethod
+    def process_row(self, row: dict, row_number: int):
         """The per-row work; each task overrides this."""
         pass
 
@@ -60,85 +144,3 @@ class Task(ABC):
             self.process_row(row)
         self.finish()
 
-    def row_column_checks(self, csv_data: DictReader, csv_column_headers: list) -> None:
-        """Check whether each row of the CSV data contains the same number of columns as there are headers.
-        :param csv_data: DictReader object containing the CSV data.
-        :param csv_column_headers: List of column headers from the CSV file.
-        """
-        row_count = 0
-        for row_count, row in enumerate(csv_data, start=1):
-            extra_headers = False
-            field_count = 0
-            for field in row:
-                # 'stringtopopulateextrafields' is added by get_csv_data() if there are extra headers.
-                if row[field] == "stringtopopulateextrafields":
-                    extra_headers = True
-                else:
-                    field_count += 1
-            if extra_headers is True:
-                message = ("Row " + str(row_count) + " (ID " + row[
-                    self.ctx.config["id_field"]] + ") of the CSV file has fewer columns " + "than there are headers (" + str(
-                    len(csv_column_headers)
-                ) + ").")
-                self.ctx.log.error(message)
-                sys.exit("Error: " + message)
-            # Note: this message is also generated in get_csv_data() since CSV Writer thows an exception if the row has form fields than headers.
-            if len(csv_column_headers) < field_count:
-                message = ("Row " + str(row_count) + " (ID " + row[
-                    self.ctx.config["id_field"]] + ") of the CSV file has more columns (" + str(
-                    field_count
-                ) + ") than there are headers (" + str(len(csv_column_headers)) + ").")
-                self.ctx.log.error(message)
-                sys.exit("Error: " + message)
-        if row_count == 0:
-            message = f"Input CSV file {self.ctx.config['input_csv']} has 0 rows."
-            self.ctx.log.error(message)
-            sys.exit("Error: " + message)
-        else:
-            message = ("OK, all " + str(
-                row_count
-            ) + " rows in the CSV file have the same number of columns as there are headers (" + str(
-                len(csv_column_headers)
-            ) + ").")
-            self.ctx.log.info(message)
-
-    def row_filter_checks(self):
-        """Perform checks on row filter settings."""
-        global commented_out_input_csv_rows_present
-        row_filter_settings = []
-        if self.ctx.config["csv_start_row"] != 0:
-            row_filter_settings.append("csv_start_row")
-        if self.ctx.config["csv_stop_row"] is not None:
-            row_filter_settings.append("csv_stop_row")
-        if "csv_rows_to_process" in self.ctx.config:
-            row_filter_settings.append("csv_rows_to_process")
-        if "csv_row_filters" in self.ctx.config:
-            row_filter_settings.append("csv_row_filters")
-        if commented_out_input_csv_rows_present is True:  # todo: don't use global variable set in get_csv_data()
-            row_filter_settings.append(True)
-        if "csv_start_row_skip" in self.ctx.config:
-            row_filter_settings.append(True)
-        if "csv_stop_row_skip" in self.ctx.config:
-            row_filter_settings.append(True)
-        if len(row_filter_settings) > 1:
-            preprocessed_input_csv_file_path = get_preprocessed_input_csv_file_path(self.ctx.config)
-            message = f'Your configuration contains more than one input CSV row filter setting, and/or your input CSV has some commented-out rows. Please check "{preprocessed_input_csv_file_path}" to confirm the rows you want are present.'
-            self.ctx.log.warning(message)
-
-    def postprocess_script_checks(self):
-        post_action_scripts_configs = ["node_post_create", "node_post_update", "media_post_create", ]
-        post_action_scripts_present = False
-        for post_action_script_config in post_action_scripts_configs:
-            if post_action_script_config in self.ctx.config and len(self.ctx.config[post_action_script_config]) > 0:
-                post_action_scripts_present = True
-                for post_action_script in self.ctx.config[post_action_script_config]:
-                    if " " in post_action_script:
-                        post_action_script = post_action_script.split(" ")[-1]
-                    if not os.path.exists(post_action_script) or not os.path.isfile(post_action_script):
-                        self.ctx.log.error(f"Post-action script {post_action_script} not found.")
-                        sys.exit(1)  # todo: replace with an exception
-                    if not os.access(post_action_script, os.X_OK):
-                        self.ctx.log.error(f"Post-action script {post_action_script} is not executable.")
-                        sys.exit(1)  # todo: replace with an exception
-            if post_action_scripts_present is True:
-                self.ctx.log.info("OK, registered post-action scripts found and executable.")

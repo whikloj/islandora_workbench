@@ -15,6 +15,8 @@ import collections
 import tempfile
 import unittest
 
+from islandora_workbench.checks import validation
+
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent.parent))
 import workbench_utils
 from WorkbenchConfig import WorkbenchConfig
@@ -411,13 +413,13 @@ class TestValidateLatlongValue(unittest.TestCase):
             "+48.43333,-123.36667",
         ]
         for value in values:
-            res = workbench_utils.validate_latlong_value(value)
+            res = validation.validate_latlong_value(value)
             self.assertTrue(res)
 
     def test_validate_bad_latlong_values(self):
         values = ["+90.1 -100.111", "045, 180", "+5025,-117.8", "-123.36667"]
         for value in values:
-            res = workbench_utils.validate_latlong_value(value)
+            res = validation.validate_latlong_value(value)
             self.assertFalse(res)
 
 
@@ -426,7 +428,7 @@ class TestValidateLinkValue(unittest.TestCase):
     def test_validate_good_link_values(self):
         values = ["http://foo.com", "https://foo1.com%%Foo Hardware"]
         for value in values:
-            res = workbench_utils.validate_link_value(value)
+            res = validation.validate_link_value(value)
             self.assertTrue(res)
 
     def test_validate_bad_link_values(self):
@@ -437,7 +439,7 @@ class TestValidateLinkValue(unittest.TestCase):
             "mailto:someone@example.com",
         ]
         for value in values:
-            res = workbench_utils.validate_link_value(value)
+            res = validation.validate_link_value(value)
             self.assertFalse(res)
 
 
@@ -449,18 +451,18 @@ class TestValidateAuthorityLinkValue(unittest.TestCase):
             "cash%%http://cash.org%%foo",
         ]
         for value in values:
-            res = workbench_utils.validate_authority_link_value(value, ["cash", "viaf"])
+            res = validation.validate_authority_link_value(value, ["cash", "viaf"])
             self.assertTrue(res)
 
     def test_validate_bad_authority_link_values(self):
         values = ["viaf%%htt://viaf.org/viaf/10646807%%VIAF Record"]
         for value in values:
-            res = workbench_utils.validate_authority_link_value(value, ["cash", "viaf"])
+            res = validation.validate_authority_link_value(value, ["cash", "viaf"])
             self.assertFalse(res)
 
         values = ["xcash%%http://cash.org%%foo"]
         for value in values:
-            res = workbench_utils.validate_authority_link_value(value, ["cash", "viaf"])
+            res = validation.validate_authority_link_value(value, ["cash", "viaf"])
             self.assertFalse(res)
 
 
@@ -469,13 +471,13 @@ class TestValidateNodeCreatedDateValue(unittest.TestCase):
     def test_validate_good_date_string_values(self):
         values = ["2020-11-15T23:49:22+00:00"]
         for value in values:
-            res = workbench_utils.validate_node_created_date_string(value)
+            res = validation.validate_node_created_date_string(value)
             self.assertTrue(res)
 
     def test_validate_bad_date_string_values(self):
         values = ["2020-11-15:23:49:22+00:00", "2020-11-15T:23:49:22", "2020-11-15"]
         for value in values:
-            res = workbench_utils.validate_node_created_date_string(value)
+            res = validation.validate_node_created_date_string(value)
             self.assertFalse(res)
 
 
@@ -1135,10 +1137,10 @@ class TestCleanCsvValues(unittest.TestCase):
 class TestValidateWeightValue(unittest.TestCase):
 
     def test_validate_weight_values(self):
-        res = workbench_utils.validate_weight_value("002")
+        res = validation.validate_weight_value("002")
         self.assertTrue(res)
 
-        res = workbench_utils.validate_weight_value("100")
+        res = validation.validate_weight_value("100")
         self.assertTrue(res)
 
         res = workbench_utils.validate_media_track_value("004a")
