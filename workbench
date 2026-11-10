@@ -9,6 +9,20 @@ from progress_bar import InitBar
 from rich.console import Console
 from rich.table import Table
 
+from islandora_workbench.checks.internal import check_rollback_file_path_directories, check_for_workbench_updates
+from islandora_workbench.checks.validation import validate_input_dir
+from islandora_workbench.drupal import issue_request, verify_node_exists_by_key
+from islandora_workbench.data_io.csv.csv_process import preprocessor_scripts_csv_row
+from islandora_workbench.data_io.rollback import write_rollback_config, prep_rollback_csv
+from islandora_workbench.drupal.client import ping_node, ping_term, create_url_alias, create_media, \
+    patch_image_alt_text, create_file, get_node_media_summary, get_term_field_values
+from islandora_workbench.drupal.utils import get_nid_from_url_alias, get_media_field_values
+from islandora_workbench.external_scripts import execute_bootstrap_script, execute_script_to_run, \
+    execute_entity_post_task_script, execute_shutdown_script
+from islandora_workbench.startup import quick_delete_media, quick_delete_node
+from islandora_workbench.tasks.create import create_children_from_directory
+from islandora_workbench.utils import truncate_csv_value, create_temp_dir, prompt_user, \
+    check_integration_module_version, check_drupal_core_version, download_remote_archive_file, unzip_archive
 from workbench_checks import check_input
 from workbench_utils import *
 import workbench_fields
@@ -161,7 +175,7 @@ def create():
         if (
             "node_exists_verification_view_endpoint" in config
             and config["paged_content_from_directories_parents_exist"] is False
-            and get_node_exists_verification_view_endpoint(config) is not False
+            and "node_exists_verification_view_endpoint" in config and len(config["node_exists_verification_view_endpoint"]) > 0
         ):
             candidate_node_id = verify_node_exists_by_key(config, copy.copy(row))
             if candidate_node_id is not False:
@@ -350,7 +364,7 @@ def create():
                         processor_script_path,
                     ) in preprocessor.items():
                         if custom_field == processor_field_name:
-                            row[custom_field] = preprocess_csv(
+                            row[custom_field] = preprocessor_scripts_csv_row(
                                 config, row, custom_field, processor_script_path
                             )
 
@@ -395,7 +409,7 @@ def create():
                 continue
 
             # Assemble Drupal field structures from CSV data. If new field types are added to
-            # workbench_fields.py, they need to be registered in the following if/elif/else block.
+            # fields.py, they need to be registered in the following if/elif/else block.
 
             field = workbench_fields.WorkbenchFieldFactory.get_field_handler(
                 field_definitions[custom_field]["field_type"]
@@ -801,7 +815,7 @@ def update():
                         processor_script_path,
                     ) in preprocessor_script.items():
                         if custom_field == processor_fieldname:
-                            row[custom_field] = preprocess_csv(
+                            row[custom_field] = preprocessor_scripts_csv_row(
                                 config, row, custom_field, processor_script_path
                             )
 
@@ -834,10 +848,10 @@ def update():
                 continue
 
             if "preprocessors" in config and custom_field in config["preprocessors"]:
-                row[custom_field] = preprocess_csv(config, row, custom_field)
+                row[custom_field] = preprocessor_scripts_csv_row(config, row, custom_field)
 
             # Assemble Drupal field structures from CSV data. If new field types are added to
-            # workbench_fields.py, they need to be registered in the following if/elif/else block.
+            # fields.py, they need to be registered in the following if/elif/else block.
             field = workbench_fields.WorkbenchFieldFactory.get_field_handler(
                 field_definitions[custom_field]["field_type"]
             )
@@ -1937,7 +1951,7 @@ def update_media() -> None:
 
             if custom_field not in reserved_fields:
                 # Assemble Drupal field structures from CSV data. If new field types are added to
-                # workbench_fields.py, they need to be registered in the following if/elif/else block.
+                # fields.py, they need to be registered in the following if/elif/else block.
 
                 field = workbench_fields.WorkbenchFieldFactory.get_field_handler(
                     field_definitions[custom_field]["field_type"]
@@ -2921,7 +2935,7 @@ def update_terms():
                 continue
 
             # Assemble Drupal field structures from CSV data. If new field types are added to
-            # workbench_fields.py, they need to be registered in the following if/elif/else block.
+            # fields.py, they need to be registered in the following if/elif/else block.
 
             field = workbench_fields.WorkbenchFieldFactory.get_field_handler(
                 field_definitions[custom_field]["field_type"]
@@ -3308,9 +3322,7 @@ if args.check is not True and config["remind_user_to_run_check"] is True:
 if args.check is not True and "check_lock_file_path" in config:
     check_lock_file_path = config["check_lock_file_path"]
     if os.path.exists(check_lock_file_path):
-        config_file_md5 = get_file_hash_from_local(
-            config, config["config_file_path"], "md5"
-        )
+        config_file_md5 = get_file_hash_from_local(config["config_file_path"], "md5")
         with open(check_lock_file_path, "r") as check_lock_file:
             check_lock_message_expected = f"Check against {config['config_file_path']} (md5 hash {config_file_md5}) OK"
             check_lock_message_from_file = check_lock_file.readline()

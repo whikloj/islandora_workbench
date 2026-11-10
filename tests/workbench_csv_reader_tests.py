@@ -14,7 +14,7 @@ from pytest_benchmark.plugin import benchmark
 sys.path.append(str(Path(__file__).parent.parent))
 from workbench_utils import (
     get_csv_data, )
-from islandora_workbench.data_io.csv_data import CsvReader
+from islandora_workbench.data_io.csv.csv_reader import CsvReader
 from islandora_workbench.exceptions import WorkbenchCsvReaderException
 
 

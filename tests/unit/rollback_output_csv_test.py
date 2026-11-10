@@ -18,7 +18,11 @@ from unittest import mock
 
 from ruamel.yaml import YAML
 
+from islandora_workbench import utils
+from islandora_workbench.checks import internal
+
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent.parent))
+from islandora_workbench.data_io import rollback, output_csv
 import workbench_utils
 
 FIXED_START_TIME = datetime.datetime(2026, 3, 4, 5, 6, 7)
@@ -85,7 +89,7 @@ class TestRollbackCsvFilePath(TempDirTestCase):
 
     def test_default_name_in_input_dir(self):
         """Test that the default rollback csv file path is in the expected location of input_dir."""
-        path = workbench_utils.get_rollback_csv_filepath(self.config())
+        path = rollback.get_rollback_csv_filepath(self.config())
         self.assertEqual(
             path, os.path.join(os.path.abspath(self.tmp_dir), "rollback.csv")
         )
@@ -93,7 +97,7 @@ class TestRollbackCsvFilePath(TempDirTestCase):
     def test_rollback_dir_takes_precedence_over_input_dir(self):
         """Test that the rollback directory takes precedence over the input directory."""
         rollback_dir = os.path.join(self.tmp_dir, "rb")
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(rollback_dir=rollback_dir)
         )
         self.assertEqual(
@@ -102,12 +106,12 @@ class TestRollbackCsvFilePath(TempDirTestCase):
 
     def test_timestamp_rollback(self):
         """Test that the timestamp is added to the rollback csv file name."""
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(timestamp_rollback=True)
         )
         self.assertEqual(os.path.basename(path), "rollback.2026_03_04_05_06_07.csv")
         """Test that recovery mode adds a timestamp and recovery_mode suffix to the rollback csv file name."""
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(recovery_mode_starting_from_node_id="123")
         )
         self.assertEqual(
@@ -116,14 +120,14 @@ class TestRollbackCsvFilePath(TempDirTestCase):
 
     def test_non_numeric_recovery_mode_value_is_ignored(self):
         """Test that a non-numeric recovery mode value is ignored."""
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(recovery_mode_starting_from_node_id="abc")
         )
         self.assertEqual(os.path.basename(path), "rollback.csv")
 
     def test_timestamp_wins_over_recovery_mode(self):
         """Test that the timestamp mode takes precedence over the recovery mode when naming the rollback file."""
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(
                 timestamp_rollback=True, recovery_mode_starting_from_node_id="123"
             )
@@ -137,13 +141,13 @@ class TestRollbackCsvFilePath(TempDirTestCase):
             csv_start_row=2,
             csv_stop_row=9,
         )
-        path = workbench_utils.get_rollback_csv_filepath(config)
+        path = rollback.get_rollback_csv_filepath(config)
         self.assertEqual(os.path.basename(path), "metadata_2-9.csv")
 
     def test_template_uses_config_file_name_without_extension(self):
         """Test that the rollback csv file name template uses the config file name without the extension."""
         config = self.config(rollback_csv_filename_template="${config_filename}")
-        path = workbench_utils.get_rollback_csv_filepath(config)
+        path = rollback.get_rollback_csv_filepath(config)
         self.assertEqual(path, os.path.join(self.tmp_dir, "create.csv"))
 
     def test_template_for_create_from_files_supports_config_filename(self):
@@ -152,7 +156,7 @@ class TestRollbackCsvFilePath(TempDirTestCase):
             task="create_from_files",
             rollback_csv_filename_template="${config_filename}",
         )
-        path = workbench_utils.get_rollback_csv_filepath(config)
+        path = rollback.get_rollback_csv_filepath(config)
         self.assertEqual(path, os.path.join(self.tmp_dir, "create.csv"))
 
     def test_template_with_unknown_placeholder_exits(self):
@@ -162,13 +166,13 @@ class TestRollbackCsvFilePath(TempDirTestCase):
             rollback_csv_filename_template="${input_csv_filename}",
         )
         with self.assertRaises(SystemExit):
-            workbench_utils.get_rollback_csv_filepath(config)
+            rollback.get_rollback_csv_filepath(config)
 
     def test_template_with_identifier_characters_exits(self):
         """Test that using $config_filename_x causes the string to be read as a placeholder and not the string "$config_filename_x"."""
         config = self.config(rollback_csv_filename_template="$config_filename_x")
         with self.assertRaises(SystemExit):
-            workbench_utils.get_rollback_csv_filepath(config)
+            rollback.get_rollback_csv_filepath(config)
 
     def test_template_is_unsupported_for_other_tasks(self):
         # Test of what looks like an accident: only "create" and
@@ -178,14 +182,14 @@ class TestRollbackCsvFilePath(TempDirTestCase):
             task="update", rollback_csv_filename_template="${config_filename}"
         )
         with self.assertRaises(UnboundLocalError):
-            workbench_utils.get_rollback_csv_filepath(config)
+            rollback.get_rollback_csv_filepath(config)
 
     def test_secondary_task_appends_config_file_identifier(self):
         """Test that when a secondary task is running, the rollback csv file name includes the config file identifier."""
         secondary = [os.path.abspath(os.path.join(self.tmp_dir, "create.yml"))]
         os.environ["ISLANDORA_WORKBENCH_SECONDARY_TASKS"] = json.dumps(secondary)
-        path = workbench_utils.get_rollback_csv_filepath(self.config())
-        expected_id = workbench_utils.get_config_file_identifier(self.config())
+        path = rollback.get_rollback_csv_filepath(self.config())
+        expected_id = utils.get_config_file_identifier(self.config())
         self.assertEqual(os.path.basename(path), f"rollback.csv.{expected_id}")
 
     def test_secondary_task_env_var_for_other_config_is_ignored(self):
@@ -193,13 +197,13 @@ class TestRollbackCsvFilePath(TempDirTestCase):
         os.environ["ISLANDORA_WORKBENCH_SECONDARY_TASKS"] = json.dumps(
             ["/somewhere/else.yml"]
         )
-        path = workbench_utils.get_rollback_csv_filepath(self.config())
+        path = rollback.get_rollback_csv_filepath(self.config())
         self.assertEqual(os.path.basename(path), "rollback.csv")
 
     def test_explicit_path_is_used_as_is(self):
         """Test that an explicit rollback csv file path is used as is, without any modifications."""
         explicit = os.path.join(self.tmp_dir, "custom", "my_rollback.csv")
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(rollback_csv_file_path=explicit)
         )
         self.assertEqual(path, explicit)
@@ -207,7 +211,7 @@ class TestRollbackCsvFilePath(TempDirTestCase):
     def test_explicit_path_with_timestamp(self):
         """Test that an explicit rollback csv file path with a timestamp is used expected."""
         explicit = os.path.join(self.tmp_dir, "my_rollback.csv")
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(rollback_csv_file_path=explicit, timestamp_rollback=True)
         )
         self.assertEqual(
@@ -216,7 +220,7 @@ class TestRollbackCsvFilePath(TempDirTestCase):
 
     def test_empty_explicit_path_falls_back_to_default(self):
         """Test that an empty explicit rollback csv file path falls back to the default."""
-        path = workbench_utils.get_rollback_csv_filepath(
+        path = rollback.get_rollback_csv_filepath(
             self.config(rollback_csv_file_path="")
         )
         self.assertEqual(os.path.basename(path), "rollback.csv")
@@ -225,7 +229,7 @@ class TestRollbackCsvFilePath(TempDirTestCase):
 class TestRollbackConfigFilePath(TempDirTestCase):
 
     def get_path(self, **overrides):
-        return workbench_utils.get_rollback_config_filepath(self.config(**overrides))
+        return rollback.get_rollback_config_filepath(self.config(**overrides))
 
     def test_default_name_in_workbench_dir(self):
         """Test that without "rollback_config_file_path" the file lands next to sys.path[0]."""
@@ -279,7 +283,7 @@ class TestRollbackConfigComments(TempDirTestCase):
 
     def test_header_comment_lines(self):
         """Test that the header comment lines are correctly generated."""
-        comments = workbench_utils.get_rollback_config_comments(self.config())
+        comments = rollback.get_rollback_config_comments(self.config())
         lines = comments.splitlines()
         self.assertEqual(
             lines[0], '# Generated by a "create" task started 2026:03:04 05:06:07 using'
@@ -290,14 +294,14 @@ class TestRollbackConfigComments(TempDirTestCase):
 
     def test_task_name_is_reported(self):
         """Test that the task name is reported in the rollback config comments."""
-        comments = workbench_utils.get_rollback_config_comments(
+        comments = rollback.get_rollback_config_comments(
             self.config(task="create_from_files")
         )
         self.assertIn('"create_from_files" task', comments)
 
     def test_user_comments_are_appended_one_per_line(self):
         """Test that user comments are appended to the rollback config comments, one per line."""
-        comments = workbench_utils.get_rollback_config_comments(
+        comments = rollback.get_rollback_config_comments(
             self.config(rollback_file_comments=["Batch 7", "Ingested by Jo"])
         )
         lines = comments.splitlines()
@@ -305,7 +309,7 @@ class TestRollbackConfigComments(TempDirTestCase):
 
     def test_empty_comment_list_adds_nothing(self):
         """Test that an empty list of user comments adds nothing to the rollback config comments."""
-        comments = workbench_utils.get_rollback_config_comments(
+        comments = rollback.get_rollback_config_comments(
             self.config(rollback_file_comments=[])
         )
         self.assertEqual(len(comments.splitlines()), 2)
@@ -316,7 +320,7 @@ class TestPrepRollbackCsv(TempDirTestCase):
     def test_header_only_node_id(self):
         """Test that the rollback CSV is created with only the node_id header when node info is not included."""
         path = os.path.join(self.tmp_dir, "rollback.csv")
-        workbench_utils.prep_rollback_csv(self.config(), path)
+        rollback.prep_rollback_csv(self.config(), path)
         lines = self.read(path).splitlines()
         self.assertEqual(lines[0], "node_id")
         self.assertTrue(all(line.startswith("#") for line in lines[1:]))
@@ -324,7 +328,7 @@ class TestPrepRollbackCsv(TempDirTestCase):
     def test_header_with_node_info_uses_configured_id_field(self):
         """Test that the rollback CSV header includes the configured ID field when node info is included."""
         path = os.path.join(self.tmp_dir, "rollback.csv")
-        workbench_utils.prep_rollback_csv(
+        rollback.prep_rollback_csv(
             self.config(rollback_file_include_node_info=True, id_field="record_id"),
             path,
         )
@@ -338,13 +342,13 @@ class TestPrepRollbackCsv(TempDirTestCase):
         path = os.path.join(self.tmp_dir, "rollback.csv")
         with open(path, "w") as f:
             f.write("node_id\n999\n")
-        workbench_utils.prep_rollback_csv(self.config(), path)
+        rollback.prep_rollback_csv(self.config(), path)
         self.assertNotIn("999", self.read(path))
 
     def test_user_comments_land_in_the_csv(self):
         """Test that user comments are included in the rollback CSV file."""
         path = os.path.join(self.tmp_dir, "rollback.csv")
-        workbench_utils.prep_rollback_csv(
+        rollback.prep_rollback_csv(
             self.config(rollback_file_comments=["keep me"]), path
         )
         self.assertIn("# keep me", self.read(path))
@@ -353,17 +357,17 @@ class TestPrepRollbackCsv(TempDirTestCase):
         """Test that attempting to write the rollback CSV to an unwritable location causes a SystemExit."""
         path = os.path.join(self.tmp_dir, "no_such_dir", "rollback.csv")
         with self.assertRaises(SystemExit):
-            workbench_utils.prep_rollback_csv(self.config(), path)
+            rollback.prep_rollback_csv(self.config(), path)
 
 
 class TestWriteRollbackNodeId(TempDirTestCase):
 
     def write(self, config, rows):
         """Prep the CSV, append rows, and return the path."""
-        path = workbench_utils.get_rollback_csv_filepath(config)
-        workbench_utils.prep_rollback_csv(config, path)
+        path = rollback.get_rollback_csv_filepath(config)
+        rollback.prep_rollback_csv(config, path)
         for node_id, csv_id, title, file_path, member_of in rows:
-            workbench_utils.write_rollback_node_id(
+            rollback.write_rollback_node_id(
                 config, node_id, csv_id, title, file_path, member_of, path
             )
         return path
@@ -427,10 +431,10 @@ class TestWriteRollbackNodeId(TempDirTestCase):
     def test_path_argument_is_ignored_in_favor_of_config(self):
         """Test showing that the rollback CSV path argument is ignored in favor of the config's rollback_csv_file_path."""
         config = self.config()
-        real_path = workbench_utils.get_rollback_csv_filepath(config)
-        workbench_utils.prep_rollback_csv(config, real_path)
+        real_path = rollback.get_rollback_csv_filepath(config)
+        rollback.prep_rollback_csv(config, real_path)
         decoy = os.path.join(self.tmp_dir, "decoy.csv")
-        workbench_utils.write_rollback_node_id(config, 5, "x", "t", "f", "", decoy)
+        rollback.write_rollback_node_id(config, 5, "x", "t", "f", "", decoy)
         self.assertFalse(os.path.exists(decoy))
         self.assertIn("5", self.data_lines(real_path))
 
@@ -451,8 +455,8 @@ class TestWriteRollbackConfig(TempDirTestCase):
             **overrides,
         )
         rollback_csv = os.path.join(self.tmp_dir, "rollback.csv")
-        workbench_utils.write_rollback_config(config, rollback_csv)
-        path = workbench_utils.get_rollback_config_filepath(config)
+        rollback.write_rollback_config(config, rollback_csv)
+        path = rollback.get_rollback_config_filepath(config)
         return path, rollback_csv
 
     def load(self, path):
@@ -537,7 +541,7 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_header_and_first_row(self):
         """Test that the output CSV is created with the correct header and first row based on the node JSON."""
         config = self.config()
-        workbench_utils.write_to_output_csv(config, "rec-1", make_node_json())
+        output_csv.write_to_output_csv(config, "rec-1", make_node_json())
         rows = self.rows(config)
         self.assertEqual(len(rows), 1)
         row = rows[0]
@@ -551,7 +555,7 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_id_field_is_first_column(self):
         """Test that the configured id_field is used as the ID in the output CSV."""
         config = self.config(id_field="record_id")
-        workbench_utils.write_to_output_csv(config, "r1", make_node_json())
+        output_csv.write_to_output_csv(config, "r1", make_node_json())
         with open(config["output_csv"], encoding="utf-8") as f:
             header = f.readline().strip().split(",")
         self.assertEqual(header[0], "record_id")
@@ -559,12 +563,12 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_true_and_false_are_written_as_0_or_1(self):
         """Test that boolean values in the node JSON are written as "0" or "1" in the output CSV."""
         config = self.config()
-        workbench_utils.write_to_output_csv(
+        output_csv.write_to_output_csv(
             config,
             "a",
             make_node_json(status=[{"value": True}], promote=[{"value": False}]),
         )
-        workbench_utils.write_to_output_csv(
+        output_csv.write_to_output_csv(
             config,
             "b",
             make_node_json(status=[{"value": False}], promote=[{"value": True}]),
@@ -577,7 +581,7 @@ class TestWriteToOutputCsv(TempDirTestCase):
         """Test that the node_id header is only written once."""
         config = self.config()
         for i in range(3):
-            workbench_utils.write_to_output_csv(config, f"r{i}", make_node_json())
+            output_csv.write_to_output_csv(config, f"r{i}", make_node_json())
         text = self.read(config["output_csv"])
         self.assertEqual(text.count("node_id"), 1)
         self.assertEqual([r["id"] for r in self.rows(config)], ["r0", "r1", "r2"])
@@ -585,9 +589,9 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_rows_are_appended_to_an_existing_file_with_header(self):
         """Test that a secondary call appends rows to the existing output CSV file without duplicating the header."""
         config = self.config()
-        workbench_utils.write_to_output_csv(config, "r0", make_node_json())
+        output_csv.write_to_output_csv(config, "r0", make_node_json())
         # A later run (i.e. a secondary task or recovery mode) appends.
-        workbench_utils.write_to_output_csv(config, "r1", make_node_json())
+        output_csv.write_to_output_csv(config, "r1", make_node_json())
         self.assertEqual(len(self.rows(config)), 2)
         text = self.read(config["output_csv"])
         # Still only one header line.
@@ -596,7 +600,7 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_internal_drupal_fields_are_not_written(self):
         """Test that internal Drupal fields are not included in the output CSV."""
         config = self.config()
-        workbench_utils.write_to_output_csv(config, "a", make_node_json())
+        output_csv.write_to_output_csv(config, "a", make_node_json())
         with open(config["output_csv"], encoding="utf-8") as f:
             header = f.readline().strip().split(",")
         for removed in ["nid", "vid", "type", "status", "created", "sticky"]:
@@ -605,7 +609,7 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_unicode_title_round_trips(self):
         """Test that a Unicode title is preserved when written to the output CSV."""
         config = self.config()
-        workbench_utils.write_to_output_csv(
+        output_csv.write_to_output_csv(
             config, "a", make_node_json(title=[{"value": "Ça va, 日本語"}])
         )
         self.assertEqual(self.rows(config)[0]["title"], "Ça va, 日本語")
@@ -613,14 +617,14 @@ class TestWriteToOutputCsv(TempDirTestCase):
     def test_create_from_files_forces_id_field_to_ID(self):
         """Test that when the task is "create_from_files", the id_field is forced to "ID" in the output CSV."""
         config = self.config(task="create_from_files", id_field="filename")
-        workbench_utils.write_to_output_csv(config, "scan01.tif", make_node_json())
+        output_csv.write_to_output_csv(config, "scan01.tif", make_node_json())
         self.assertEqual(config["id_field"], "ID")
         self.assertEqual(self.rows(config)[0]["ID"], "scan01.tif")
 
     def test_unix_line_endings(self):
         """Test that the output CSV uses Unix line endings."""
         config = self.config()
-        workbench_utils.write_to_output_csv(config, "a", make_node_json())
+        output_csv.write_to_output_csv(config, "a", make_node_json())
         self.assertNotIn("\r", self.read(config["output_csv"]))
 
 
@@ -643,7 +647,7 @@ class TestWriteToOutputCsvIncludingInputCsv(TempDirTestCase):
                 workbench_utils, "serialize_field_json", return_value="SERIALIZED"
             ),
         ):
-            workbench_utils.write_to_output_csv(
+            output_csv.write_to_output_csv(
                 config, row_id, node_json, copy.deepcopy(input_row)
             )
 
@@ -720,7 +724,7 @@ class TestWriteToOutputCsvIncludingInputCsv(TempDirTestCase):
     def test_input_row_none_writes_only_node_data(self):
         """Test that when output_csv_include_input_csv is true and the input row is None, only the node data is written to the output CSV."""
         config = self.config(output_csv_include_input_csv=True)
-        workbench_utils.write_to_output_csv(config, "a", make_node_json(), None)
+        output_csv.write_to_output_csv(config, "a", make_node_json(), None)
         row = self.rows(config)[0]
         self.assertEqual(row["node_id"], "321")
 
@@ -745,7 +749,7 @@ class TestWriteToOutputCsvIncludingInputCsv(TempDirTestCase):
                 workbench_utils, "serialize_field_json", return_value="S"
             ),
         ):
-            workbench_utils.write_to_output_csv(config, "a", make_node_json(), passed)
+            output_csv.write_to_output_csv(config, "a", make_node_json(), passed)
         self.assertNotIn("file", passed)
         self.assertIn("file", original)
 
@@ -757,7 +761,7 @@ class TestCheckRollbackFilePathDirectories(TempDirTestCase):
         config = self.config(
             rollback_config_file_path=os.path.join(self.tmp_dir, "rb.yml"),
         )
-        workbench_utils.check_rollback_file_path_directories(config)
+        internal.check_rollback_file_path_directories(config)
 
     def test_missing_rollback_config_directory_exits(self):
         """Test that when the directory for the rollback config file path does not exist, a SystemExit is raised."""
@@ -765,7 +769,7 @@ class TestCheckRollbackFilePathDirectories(TempDirTestCase):
             rollback_config_file_path=os.path.join(self.tmp_dir, "nope", "rb.yml"),
         )
         with self.assertRaises(SystemExit) as cm:
-            workbench_utils.check_rollback_file_path_directories(config)
+            internal.check_rollback_file_path_directories(config)
         self.assertIn("rollback configuration file path", str(cm.exception))
 
     def test_missing_rollback_csv_directory_exits(self):
@@ -775,7 +779,7 @@ class TestCheckRollbackFilePathDirectories(TempDirTestCase):
             rollback_csv_file_path=os.path.join(self.tmp_dir, "nope", "rb.csv"),
         )
         with self.assertRaises(SystemExit) as cm:
-            workbench_utils.check_rollback_file_path_directories(config)
+            internal.check_rollback_file_path_directories(config)
         self.assertIn("rollback CSV file path", str(cm.exception))
 
 

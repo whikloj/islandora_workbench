@@ -1,17 +1,49 @@
 """Class to encapsulate Workbench configuration definitions."""
-
+import argparse
+import logging
+import os
 import shlex
+import sys
 import tempfile
 from getpass import getpass
-from workbench_utils import *
+from logging import Logger
+
+from islandora_workbench.exceptions import WorkbenchException
 from rich.console import Console
 from rich.table import Table
+from cryptography.fernet import Fernet
+from ruamel.yaml import YAMLError, YAML
+
+
+def generate_logger(config: dict):
+    logger = logging.getLogger("islandora_workbench")
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler(
+        filename=config["log_file_path"],
+        mode=config["log_file_mode"] if "log_file_mode" in config else "a", encoding="utf-8"
+    )
+    fmt_str = (
+        "%(asctime)s - %(levelname)s - %(filename)s - %(lineno)d - %(message)s"
+        if "log_file_name_and_line_number" in config
+           and config["log_file_name_and_line_number"] is True else
+        "%(asctime)s - %(levelname)s - %(message)s"
+    )
+    handler.setFormatter(
+        logging.Formatter(
+            fmt=fmt_str,
+            datefmt="%d-%b-%y %H:%M:%S"
+        )
+    )
+    logger.addHandler(handler)
+    return logger
 
 
 class WorkbenchConfig:
     def __init__(self, args):
         self.args = args
         self.args.config = os.path.expanduser(self.args.config)
+        # Generate a basic logger before we have the full config, so we can log errors in the config file.
+        generate_logger({"log_file_path": "workbench.log"})
         self.path_check()
         self.user_mods = self.get_user_config()
         if "password" not in self.user_mods and "username" in self.user_mods:
@@ -21,13 +53,12 @@ class WorkbenchConfig:
             self.user_mods["username"] = credentials_from_file[0]
             self.user_mods["password"] = credentials_from_file[1]
         self.config = self.get_config()
-        logging.basicConfig(
-            filename=self.config["log_file_path"],
-            level=logging.INFO,
-            filemode="a",
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            datefmt="%d-%b-%y %H:%M:%S",
-        )
+        # Regenerate the logger with the full config.
+        self.logger = generate_logger(self.config)
+
+    def get_logger(self) -> Logger:
+        """Returns the logger instance configured for workbench."""
+        return self.logger
 
     def get_credentials(self):
         """If the password is not set in the config file, in the credentials file, or in the
@@ -46,15 +77,15 @@ class WorkbenchConfig:
         with open(self.args.config, "r") as stream:
             try:
                 password_cfg = yaml.load(stream)
-            except YAMLError as exc:
+            except YAMLError:
                 message = (
                     f"There appears to be a YAML syntax error in your configuration file, {self.args.config}. Remove "
                     f"the username and\npassword, and run the file through https://codebeautify.org/yaml-validator/ "
                     f"or your YAML validator of choice.\n"
                     f"(Check 'workbench.log' file for additional error details.)"
                 )
-                logging.error(message)
-                sys.exit(message)
+                self.get_logger().error(message)
+                raise WorkbenchException(message)
 
         if "password" not in password_cfg:
             if "ISLANDORA_WORKBENCH_PASSWORD" in os.environ:
@@ -69,11 +100,11 @@ class WorkbenchConfig:
                 if os.path.exists(credentials_file_path) is False:
                     message = (
                         'Error: Credentials file "'
-                        + credentials_file_path
+                        + str(credentials_file_path)
                         + '" not found.'
                     )
-                    logging.error(message)
-                    sys.exit(message)
+                    self.get_logger().error(message)
+                    raise WorkbenchException(message)
                 else:
                     # We open the file to determine how many lines it contains.
                     with open(credentials_file_path, "r") as stream:
@@ -119,17 +150,8 @@ class WorkbenchConfig:
                                     credentials["password"],
                                 )
                         except YAMLError as exc:
-                            print(
-                                f"There appears to be a YAML syntax error in your credentials file, {credentials_file_path}. See workbench.log for details."
-                            )
-                            logging.basicConfig(
-                                filename="workbench.log",
-                                format="%(asctime)s - %(levelname)s - %(message)s",
-                                datefmt="%d-%b-%y %H:%M:%S",
-                            )
-                            yaml_error = f"\nYAML parsing error in credentials file\nException type: {type(exc).__name__}\n{exc}"
-                            logging.error(yaml_error)
-                            sys.exit()
+                            self.get_logger().error(f"\nYAML parsing error in credentials file\nException type: {type(exc).__name__}\n{exc}")
+                            raise WorkbenchException(f"There appears to be a YAML syntax error in your credentials file, {credentials_file_path}. See workbench.log for details.")
             else:
                 try:
                     password = getpass(
@@ -158,8 +180,8 @@ class WorkbenchConfig:
                         + path_to_credentials_key_file_path
                         + '" not found.'
                     )
-                    logging.error(message)
-                    sys.exit(message)
+                    self.get_logger().error(message)
+                    raise WorkbenchException(message)
 
                 # Get the value in the key file.
                 with open(path_to_credentials_key_file_path, "rb") as f:
@@ -169,7 +191,7 @@ class WorkbenchConfig:
             else:
                 try:
                     encryption_key = getpass(
-                        "Enter the encryptionn key for your credentials file (ctrl-c to exit): "
+                        "Enter the encryption key for your credentials file (ctrl-c to exit): "
                     )
                 except KeyboardInterrupt:
                     print("\nExiting.")
@@ -185,14 +207,13 @@ class WorkbenchConfig:
             message = (
                 f"Provided encryption key cannot decrypt the credentials file: {e}"
             )
-            logging.error(message)
-            sys.exit(message)
+            self.get_logger().error(message)
+            raise WorkbenchException(message)
 
     # Get fully constructed config dictionary.
     def get_config(self):
         try:
             config = self.get_default_config()
-            # user_mods = self.get_user_config()
         except KeyboardInterrupt:
             try:
                 sys.exit(0)
@@ -210,9 +231,9 @@ class WorkbenchConfig:
                 config[key] = value
 
         # Modify some conditional values.
-        if "temp_dir" not in self.user_mods.keys():
+        if "temp_dir" not in config:
             config["temp_dir"] = tempfile.gettempdir()
-        if self.user_mods["task"] in [
+        if config["task"] in [
             "add_media",
             "update",
             "delete",
@@ -223,10 +244,9 @@ class WorkbenchConfig:
             config["id_field"] = "node_id"
         elif config["task"] == "delete_media":
             config["id_field"] = "media_id"
-        if self.user_mods["task"] == "create_terms":
+        elif config["task"] == "create_terms":
             config["id_field"] = "term_name"
             config["allow_adding_terms"] = True
-        # @todo: These two overrides aren't working. For now, they are set within workbench.update_terms().
         elif config["task"] == "update_terms":
             config["id_field"] = "term_id"
 
@@ -326,18 +346,9 @@ class WorkbenchConfig:
                     f"or your YAML validator of choice.\n"
                     f"(Check 'workbench.log' file for additional error details.)"
                 )
-                # We are using logging.basicConfig() here to set a temporary logger here because this method will
-                # run inside WorkbenchConfig.__init__() before the WorkbenchConfig class logger is configured.
-                # Also by using the logger we don't have to output the YAML parsing errors to the CLI
-                logging.basicConfig(
-                    filename="workbench.log",
-                    format="%(asctime)s - %(levelname)s - %(message)s",
-                    datefmt="%d-%b-%y %H:%M:%S",
-                )
                 yaml_error = f"\nYAML parsing error in configuration file\nException type: {type(exc).__name__}\n{exc}"
-                logging.error(yaml_error)
-
-                sys.exit()
+                self.get_logger().error(yaml_error)
+                raise WorkbenchException("YAML parsing error in configuration file. See workbench log for details.")
 
         # 'media_file_fields' has been replaced with 'media_fields' and 'media_type_file_fields'.
         # This is aliasing code that can be removed at some point in the future.
@@ -544,11 +555,11 @@ class WorkbenchConfig:
             "require_entity_reference_views": True,
             "csv_start_row": 0,
             "csv_stop_row": None,
-            "path_to_workbench_script": os.path.join(os.getcwd(), "workbench"),
+            "path_to_workbench_script": os.path.join(os.getcwd(), "../workbench"),
             "oembed_providers": self.get_oembed_media_types(),
             "contact_sheet_output_dir": "contact_sheet_output",
             "contact_sheet_css_path": os.path.join(
-                "assets", "contact_sheet", "contact-sheet.css"
+                "../assets", "contact_sheet", "contact-sheet.css"
             ),
             "page_title_template": "$parent_title, page $weight",
             "csv_headers": "names",
@@ -581,17 +592,9 @@ class WorkbenchConfig:
     def path_check(self):
         # Check existence of configuration file.
         if not os.path.exists(self.args.config):
-            # Since the main logger gets its log file location from this file, we
-            # need to define a local logger to write to the default log file location,
-            # 'workbench.log'.
-            logging.basicConfig(
-                filename="workbench.log",
-                format="%(asctime)s - %(levelname)s - %(message)s",
-                datefmt="%d-%b-%y %H:%M:%S",
-            )
             message = 'Error: Configuration file "' + self.args.config + '" not found.'
-            logging.error(message)
-            sys.exit(message)
+            self.get_logger().error(message)
+            raise WorkbenchException(message)
 
     # Convenience function for debugging - Prints config to console screen.
     def print_config(self):
@@ -602,3 +605,59 @@ class WorkbenchConfig:
             table.add_row(key, str(value))
         console = Console()
         console.print(table)
+
+
+def print_config(ctx: dict):
+    """
+    Prints the current configuration settings.
+    :param ctx: The context dictionary containing configuration settings and logger.
+    """
+    config = ctx["config"]
+    print("\nCurrent Islandora Workbench configuration, including defaults")
+    table = Table()
+    table.add_column("Config setting", justify="left")
+    table.add_column("Value", justify="left")
+    for key, value in config.items():
+        if key == "password":
+            table.add_row(key, "xxxxxxxxxx")
+        else:
+            table.add_row(key, str(value))
+
+    ctx["log"].info(table, print_only=True)
+
+
+def do_overrides(ctx: dict, args: argparse.Namespace):
+    """
+    Overrides configuration settings based on command-line arguments.
+    :param ctx: The context dictionary containing configuration settings and logger.
+    :param args: The command-line arguments parsed by argparse.
+    """
+    if ctx["config"]["remove_password_from_config_file"] is True:
+        with open(ctx["config"]["config_file"], "r+") as config_file_to_remove_password_from_fh:
+            config_file_contents = config_file_to_remove_password_from_fh.readlines()
+            config_file_contents = [line for line in config_file_contents if not line.startswith("password")]
+            config_file_to_remove_password_from_fh.seek(0)
+            config_file_to_remove_password_from_fh.writelines(config_file_contents)
+            config_file_to_remove_password_from_fh.truncate()
+
+    # Override configuration settings that are provided as command-line arguments.
+    if args.input_csv is not None:
+        ctx["config"]["input_csv"] = args.input_csv
+    if args.google_sheets_gid is not None:
+        ctx["config"]["google_sheets_gid"] = args.google_sheets_gid
+    if args.input_dir is not None:
+        ctx["config"]["input_dir"] = args.input_dir
+    if args.log_file_path is not None:
+        ctx["config"]["log_file_path"] = args.log_file_path
+    if args.rollback_config_file_path is not None:
+        ctx["config"]["rollback_config_file_path"] = args.rollback_config_file_path
+    if args.rollback_csv_file_path is not None:
+        ctx["config"]["rollback_csv_file_path"] = args.rollback_csv_file_path
+    if args.csv_start_row is not None:
+        ctx["config"]["csv_start_row"] = int(args.csv_start_row)
+    if args.csv_stop_row is not None:
+        ctx["config"]["csv_stop_row"] = int(args.csv_stop_row)
+    if args.recovery_mode_starting_from_node_id is not None:
+        ctx["config"]["recovery_mode_starting_from_node_id"] = args.recovery_mode_starting_from_node_id
+    if args.skip_user_prompts:
+        ctx["config"]["skip_user_prompts"] = True

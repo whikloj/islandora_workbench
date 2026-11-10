@@ -2,7 +2,9 @@ import sys
 
 from islandora_workbench.tasks import register_task
 from islandora_workbench.tasks.base import Task
-from workbench_utils import check_for_required_config_keys, check_csv_file_exists, get_csv_data
+from workbench_utils import check_csv_file_exists, get_csv_data
+from islandora_workbench.utils import check_for_required_config_keys
+
 
 @register_task("delete")
 class DeleteTask(Task):

@@ -2,9 +2,12 @@ import json
 import os
 import subprocess
 
+from islandora_workbench.checks.csv_checks import csv_checks
 from islandora_workbench.exceptions import WorkbenchValidationException
-from workbench_utils import ping_islandora, check_integration_module_version, ping_remote_file, validate_input_dir, \
-    create_temp_dir, get_file_hash_from_local
+from workbench_utils import ping_remote_file
+from islandora_workbench.checks.internal import check_for_workbench_updates
+from islandora_workbench.utils import get_file_hash_from_local
+from islandora_workbench.drupal import ping_islandora
 
 
 def input_data_zip_archives_checks(ctx: dict):
@@ -95,9 +98,7 @@ def lock_file_checks(ctx: dict):
     """
     if "check_lock_file_path" in ctx["config"]:
         with open(ctx["config"]["check_lock_file_path"], "a") as check_lock_file:
-            config_file_md5 = get_file_hash_from_local(
-                ctx["config"], ctx["config"]["config_file_path"], "md5"
-            )
+            config_file_md5 = get_file_hash_from_local(ctx["config"]["config_file_path"], "md5")
             check_lock_file.write(
                 f'Check against {ctx["config"]["config_file_path"]} (md5 hash {config_file_md5}) OK'
             )
@@ -163,30 +164,23 @@ def postprocess_script_checks(ctx: dict):
         if post_action_scripts_present is True:
             ctx["log"].info("OK, registered post-action scripts found and executable.")
 
-def common_checks_before_task(ctx: dict):
+def common_checks_before_task(ctx: dict, use_csv: bool = False):
     """Run common checks for all tasks before the task specific checks are run.
 
     :param ctx: The context to use
+    :param use_csv: Whether to perform CSV checks (default: False)
     """
-    # todo: pass configuration file path into workflow, and log it here.
-    ctx["log"].info("Starting configuration check for create task using config file: ")
+    ctx["log"].info("Starting configuration check for create task using config file: " + ctx["config"]["current_config_file_path"])
 
-    if "check_lock_file_path" in ctx["config"]:
-        if os.path.exists(ctx["config"]["check_lock_file_path"]):
-            os.remove(ctx["config"]["check_lock_file_path"])
-
-    ping_islandora(ctx["config"], print_message=False)
-    check_integration_module_version(ctx["config"], log_success=False)
-
-    create_temp_dir(ctx["config"])
-
-    validate_input_dir(ctx["config"])
-
+    check_for_workbench_updates(ctx["context"]["config"])
     input_data_zip_archives_checks(ctx)
 
     bootstrap_script_checks(ctx)
     shutdown_script_checks(ctx)
     preprocess_script_checks(ctx)
+    if use_csv:
+        csv_checks(ctx)
+
 
 def common_checks_after_task(ctx: dict):
     """Run common checks for all tasks after the task specific checks are run.

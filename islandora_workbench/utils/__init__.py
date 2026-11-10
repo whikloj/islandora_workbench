@@ -1,8 +1,8 @@
-import copy
 import logging
+from collections import deque
 from typing import Union
 
-from islandora_workbench.data_io.csv_data import CsvReader
+from rich import Console
 
 
 class Reporter:
@@ -10,7 +10,7 @@ class Reporter:
 
     def __init__(self, logger=None, console=None):
         self.logger = logger or logging.getLogger("islandora_workbench")
-        self.console = console or print
+        self.console = console or Console()
 
     def debug(self, message, log_message=None, log_only=False):
         """Log a debug message.
@@ -66,28 +66,24 @@ class Reporter:
                 self.logger.debug(log_message)
         if print_only or not log_only:
             # Prepend the level to the message for console output (i.e. info => Info, error => Error, etc.)
-            self.console(level[0].upper() + level[1:] + ": " + message)
+            self.console.print(level[0].upper() + level[1:] + ": " + message)
 
-class Context:
-    """A simple context for passing a Reporter, configuration and other data around."""
 
-    _config: dict
-    _log: Reporter
-    _csv: Union[None, CsvReader]
+class ResponseTimeTracker:
+    """A class to track and calculate the average response time of the most recent HTTP requests."""
 
-    def __init__(self, config: dict, log: Union[Reporter, None] = None, csv: Union[None, CsvReader] = None):
-        self._config = copy.deepcopy(config)
-        self._log = log or Reporter()
-        self._csv = csv
+    def __init__(self, logger: logging.Logger, log_sample: bool = False):
+        self.logger = logger
+        self.log_sample = log_sample
+        self.response_times: deque[float] = deque(maxlen=20)
 
-    @property
-    def config(self):
-        return self._config
-
-    @property
-    def log(self):
-        return self._log
-
-    @property
-    def csv(self):
-        return self._csv
+    def calculate_response_time_trend(self, response_time: Union[int, float]) -> float:
+        """Gets the average response time from the most recent 20 HTTP requests.
+        :param response_time: Response time of current request, in seconds.
+        :return float: The average response time of the most recent requests up to 20.
+        """
+        self.response_times.append(response_time)
+        if self.log_sample:
+            self.logger.info("Response time trend sample: %s", self.response_times)
+        average = sum(self.response_times) / len(self.response_times)
+        return average

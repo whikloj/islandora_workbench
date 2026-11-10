@@ -22,3 +22,8 @@ class WorkbenchValidationWarning(WorkbenchValidationException):
     """Custom exception for validation warnings in Workbench."""
 
     pass
+
+class WorkbenchException(Exception):
+    """Custom exception for general Workbench errors."""
+
+    pass

@@ -1,8 +1,6 @@
 """unittest tests that do not require a live Drupal."""
 
 import argparse
-import contextlib
-import io
 import sys
 import os
 from datetime import timedelta
@@ -15,7 +13,11 @@ import collections
 import tempfile
 import unittest
 
+from islandora_workbench import utils
 from islandora_workbench.checks import validation
+from islandora_workbench.data_io.csv import csv_process, csv_cache
+from islandora_workbench.drupal import utils, client
+from islandora_workbench.utils import string_utils, remote_utils
 
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent.parent))
 import workbench_utils
@@ -25,25 +27,25 @@ from WorkbenchConfig import WorkbenchConfig
 class TestCompareStings(unittest.TestCase):
 
     def test_strings_match(self):
-        res = workbench_utils.compare_strings("foo", "foo  ")
+        res = utils.compare_strings("foo", "foo  ")
         self.assertTrue(res)
-        res = workbench_utils.compare_strings("foo", "Foo")
+        res = utils.compare_strings("foo", "Foo")
         self.assertTrue(res)
-        res = workbench_utils.compare_strings("foo", "Foo#~^.")
+        res = utils.compare_strings("foo", "Foo#~^.")
         self.assertTrue(res)
-        res = workbench_utils.compare_strings("foo bar baz", "foo   bar baz")
+        res = utils.compare_strings("foo bar baz", "foo   bar baz")
         self.assertTrue(res)
-        res = workbench_utils.compare_strings(
+        res = utils.compare_strings(
             "Lastname,Firstname", "Lastname, Firstname"
         )
         self.assertTrue(res)
-        res = workbench_utils.compare_strings(
+        res = utils.compare_strings(
             "لدولي العاشر ليونيكود--", "لدولي, العاشر []ليونيكود"
         )
         self.assertTrue(res)
 
     def test_strings_do_not_match(self):
-        res = workbench_utils.compare_strings("foo", "foot")
+        res = utils.compare_strings("foo", "foot")
         self.assertFalse(res)
 
 
@@ -66,12 +68,12 @@ class TestSplitGeolocationString(unittest.TestCase):
 
     def test_split_geolocation_string_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_geolocation_string(config, "49.16667, -123.93333")
+        res = utils.split_geolocation_string(config, "49.16667, -123.93333")
         self.assertDictEqual(res[0], {"lat": "49.16667", "lng": "-123.93333"})
 
     def test_split_geolocation_string_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_geolocation_string(
+        res = utils.split_geolocation_string(
             config, "30.16667, -120.93333|50.1,-120.5"
         )
         self.assertDictEqual(res[0], {"lat": "30.16667", "lng": "-120.93333"})
@@ -79,7 +81,7 @@ class TestSplitGeolocationString(unittest.TestCase):
 
     def test_split_geolocation_string_multiple_at_sign(self):
         config = {"subdelimiter": "@"}
-        res = workbench_utils.split_geolocation_string(
+        res = utils.split_geolocation_string(
             config, "49.16667, -123.93333@50.1,-120.5"
         )
         self.assertDictEqual(res[0], {"lat": "49.16667", "lng": "-123.93333"})
@@ -87,7 +89,7 @@ class TestSplitGeolocationString(unittest.TestCase):
 
     def test_split_geolocation_string_with_leading_slash(self):
         config = {"subdelimiter": "@"}
-        res = workbench_utils.split_geolocation_string(
+        res = utils.split_geolocation_string(
             config, r"\+49.16667, -123.93333@\+50.1,-120.5"
         )
         self.assertDictEqual(res[0], {"lat": "+49.16667", "lng": "-123.93333"})
@@ -95,7 +97,7 @@ class TestSplitGeolocationString(unittest.TestCase):
 
     def test_split_geolocation_string_empty(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_geolocation_string(config, " ")
+        res = utils.split_geolocation_string(config, " ")
         self.assertEqual(res, [])
 
 
@@ -103,7 +105,7 @@ class TestSplitLinkString(unittest.TestCase):
 
     def test_split_link_string_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_link_string(
+        res = utils.split_link_string(
             config, "http://www.foo.bar%%Foobar website"
         )
         self.assertDictEqual(
@@ -112,7 +114,7 @@ class TestSplitLinkString(unittest.TestCase):
 
     def test_split_geolocation_string_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_link_string(
+        res = utils.split_link_string(
             config,
             "http://foobar.net%%Foobardotnet website|http://baz.com%%Baz website",
         )
@@ -123,14 +125,14 @@ class TestSplitLinkString(unittest.TestCase):
 
     def test_split_link_string_no_title_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_link_string(config, "http://www.foo.bar")
+        res = utils.split_link_string(config, "http://www.foo.bar")
         self.assertDictEqual(
             res[0], {"uri": "http://www.foo.bar", "title": "http://www.foo.bar"}
         )
 
     def test_split_geolocation_string_no_title_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_link_string(
+        res = utils.split_link_string(
             config, "http://foobar.net|http://baz.com%%Baz website"
         )
         self.assertDictEqual(
@@ -143,7 +145,7 @@ class TestSplitAuthorityLinkString(unittest.TestCase):
 
     def test_split_link_string_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_authority_link_string(
+        res = utils.split_authority_link_string(
             config, "foo%%http://www.foo.bar%%Foobar website"
         )
         self.assertDictEqual(
@@ -153,7 +155,7 @@ class TestSplitAuthorityLinkString(unittest.TestCase):
 
     def test_split_geolocation_string_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_authority_link_string(
+        res = utils.split_authority_link_string(
             config,
             "bar%%http://foobar.net%%Foobardotnet website|xxx%%http://baz.com%%Baz website",
         )
@@ -171,7 +173,7 @@ class TestSplitAuthorityLinkString(unittest.TestCase):
 
     def test_split_link_string_no_title_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_authority_link_string(
+        res = utils.split_authority_link_string(
             config, "foo%%http://www.foo.bar"
         )
         self.assertDictEqual(
@@ -180,7 +182,7 @@ class TestSplitAuthorityLinkString(unittest.TestCase):
 
     def test_split_geolocation_string_no_title_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_authority_link_string(
+        res = utils.split_authority_link_string(
             config, "zzz%%http://foobar.net|rrr%%http://baz.com%%Baz website"
         )
         self.assertDictEqual(
@@ -195,7 +197,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_string_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config, "relators:pht:5", "foo"
         )
         self.assertDictEqual(
@@ -205,7 +207,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_alpha_numeric_string_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config, "aat:300024987:5", "foo"
         )
         self.assertDictEqual(
@@ -215,7 +217,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_uri_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config, "relators:art:https://foo.bar/baz", "foo"
         )
         self.assertDictEqual(
@@ -229,7 +231,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_uri_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config,
             "relators:pht:https://example.com/example1|relators:con:https://example5.com/example6",
             "bar",
@@ -253,7 +255,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_string_single_with_delimter_in_value(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config, "relators:pbl:London: Bar Press", "foopub"
         )
         self.assertDictEqual(
@@ -267,7 +269,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_string_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config, "relators:pht:5|relators:con:10", "bar"
         )
         self.assertDictEqual(
@@ -281,7 +283,7 @@ class TestSplitTypedRelationString(unittest.TestCase):
 
     def test_split_typed_relation_string_multiple_at_sign(self):
         config = {"subdelimiter": "@"}
-        res = workbench_utils.split_typed_relation_string(
+        res = utils.split_typed_relation_string(
             config, "relators:pht:5@relators:con:10", "baz"
         )
         self.assertDictEqual(
@@ -298,7 +300,7 @@ class TestMediaTrackString(unittest.TestCase):
 
     def test_split_media_track_string_single(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_media_track_string(
+        res = utils.split_media_track_string(
             config, "Transcript:subtitles:en:/path/to/file"
         )
         self.assertDictEqual(
@@ -313,7 +315,7 @@ class TestMediaTrackString(unittest.TestCase):
 
     def test_split_media_track_string_single_windows(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_media_track_string(
+        res = utils.split_media_track_string(
             config, "Foo:subtitles:en:c:/path/to/file"
         )
         self.assertDictEqual(
@@ -328,7 +330,7 @@ class TestMediaTrackString(unittest.TestCase):
 
     def test_split_media_track_multiple(self):
         config = {"subdelimiter": "|"}
-        res = workbench_utils.split_media_track_string(
+        res = utils.split_media_track_string(
             config,
             "Bar:subtitles:en:c:/path/to/file.vtt|Baz:subtitles:fr:/path/to/file2.vtt",
         )
@@ -355,37 +357,37 @@ class TestMediaTrackString(unittest.TestCase):
 class TestValidateMediaTrackString(unittest.TestCase):
 
     def test_validate_media_track_values(self):
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             "Transcript:subtitles:en:c:/path/to/file.vtt"
         )
         self.assertTrue(res)
 
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             "Transcript:captions:de:c:/path/to/file.vtt"
         )
         self.assertTrue(res)
 
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             "Transcript:subtitles:fr:c:/path/to/file.VTT"
         )
         self.assertTrue(res)
 
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             "Transcript:subtitles:ff:c:/path/to/file.VTT"
         )
         self.assertFalse(res)
 
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             "Transcript:subtitles:en:c:/path/to/file.ccc"
         )
         self.assertFalse(res)
 
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             ":subtitles:en:c:/path/to/file.VTT"
         )
         self.assertFalse(res)
 
-        res = workbench_utils.validate_media_track_value(
+        res = validation.validate_media_track_value(
             "Transcript:subtitle:en:c:/path/to/file.vtt"
         )
         self.assertFalse(res)
@@ -394,11 +396,11 @@ class TestValidateMediaTrackString(unittest.TestCase):
 class TestValidateLanguageCode(unittest.TestCase):
 
     def test_validate_code_in_list(self):
-        res = workbench_utils.validate_language_code("es")
+        res = utils.validate_language_code("es")
         self.assertTrue(res)
 
     def test_validate_code_not_in_list(self):
-        res = workbench_utils.validate_language_code("foo")
+        res = utils.validate_language_code("foo")
         self.assertFalse(res)
 
 
@@ -511,7 +513,7 @@ class TestValidEdtfDate(unittest.TestCase):
             "XXXX%",
         ]
         for good_value in good_values:
-            res = workbench_utils.validate_edtf_date(good_value)
+            res = validation.validate_edtf_date(good_value)
             self.assertTrue(res, good_value)
 
     def test_validate_bad_edtf_values(self):
@@ -527,7 +529,7 @@ class TestValidEdtfDate(unittest.TestCase):
             "2XX%",
         ]
         for bad_value in bad_values:
-            res = workbench_utils.validate_edtf_date(bad_value)
+            res = validation.validate_edtf_date(bad_value)
             self.assertFalse(res, bad_value)
 
 
@@ -805,7 +807,7 @@ class TestGetCsvFromExcel(unittest.TestCase):
         )
 
     def test_get_csv_from_excel(self):
-        workbench_utils.get_csv_from_excel(self.config)
+        csv_cache.get_csv_from_excel(self.config)
         csv_data_fh = open(self.csv_file_path, "r")
         csv_data = csv_data_fh.readlines()
         csv_data_fh.close()
@@ -925,13 +927,13 @@ class TestDrupalCoreVersionNumbers(unittest.TestCase):
         minimum_core_version = tuple([8, 6])
         lower_versions = ["8.3.0", "8.5.0-alpha1", "8.5.0", "8.5.6"]
         for version in lower_versions:
-            version_number = workbench_utils.convert_semver_to_number(version)
+            version_number = utils.convert_semver_to_number(version)
             res = version_number < minimum_core_version
             self.assertTrue(
                 res, "Version number " + str(version_number) + " is greater than 8.6."
             )
 
-        version_number = workbench_utils.convert_semver_to_number("8.6")
+        version_number = utils.convert_semver_to_number("8.6")
         self.assertTrue(version_number == minimum_core_version, "Not sure what failed.")
 
         higher_versions = [
@@ -946,7 +948,7 @@ class TestDrupalCoreVersionNumbers(unittest.TestCase):
             "9.0.2",
         ]
         for version in higher_versions:
-            version_number = workbench_utils.convert_semver_to_number(version)
+            version_number = utils.convert_semver_to_number(version)
             res = version_number >= minimum_core_version
             self.assertTrue(
                 res, "Version number " + str(version_number) + " is less than 8.6."
@@ -958,7 +960,7 @@ class TestIntegrationModuleVersionNumbers(unittest.TestCase):
         minimum_version = tuple([1, 0])
         lower_versions = ["0.9", "0.8", "0.8.0-dev"]
         for version in lower_versions:
-            version_number = workbench_utils.convert_semver_to_number(version)
+            version_number = utils.convert_semver_to_number(version)
             res = version_number < minimum_version
             self.assertTrue(
                 res, "Version number " + str(version_number) + " is greater than 1.0."
@@ -966,7 +968,7 @@ class TestIntegrationModuleVersionNumbers(unittest.TestCase):
 
         higher_versions = ["1.0.0", "1.0.1", "1.2", "1.0.1-dev", "10.0"]
         for version in higher_versions:
-            version_number = workbench_utils.convert_semver_to_number(version)
+            version_number = utils.convert_semver_to_number(version)
             res = version_number >= minimum_version
             self.assertTrue(
                 res, "Version number " + str(version_number) + " is less than 1.0."
@@ -975,7 +977,7 @@ class TestIntegrationModuleVersionNumbers(unittest.TestCase):
         minimum_version = tuple([1, 2])
         lower_versions = ["0.9", "0.8", "0.8.0-dev", "1.0.0", "1.0.1", "1.1", "1.1.9"]
         for version in lower_versions:
-            version_number = workbench_utils.convert_semver_to_number(version)
+            version_number = utils.convert_semver_to_number(version)
             res = version_number < minimum_version
             self.assertTrue(
                 res, "Version number " + str(version_number) + " is greater than 1.2."
@@ -983,7 +985,7 @@ class TestIntegrationModuleVersionNumbers(unittest.TestCase):
 
         higher_versions = ["1.2.1", "1.3.0", "10.0"]
         for version in higher_versions:
-            version_number = workbench_utils.convert_semver_to_number(version)
+            version_number = utils.convert_semver_to_number(version)
             res = version_number >= minimum_version
             self.assertTrue(
                 res, "Version number " + str(version_number) + " is less than 1.2."
@@ -998,7 +1000,7 @@ class TestDedupedFilePaths(unittest.TestCase):
             ["/tmp/dir/dog_05.zip", "/tmp/dir/dog_6.zip"],
         ]
         for path_pair in paths:
-            deduped_path = workbench_utils.get_deduped_file_path(path_pair[0])
+            deduped_path = string_utils.get_deduped_file_path(path_pair[0])
             self.assertEqual(deduped_path, path_pair[1])
 
 
@@ -1006,18 +1008,18 @@ class TestValueIsNumeric(unittest.TestCase):
     def test_value_is_numeric(self):
         values = ["200", "0", 999]
         for value in values:
-            res = workbench_utils.value_is_numeric(value)
+            res = utils.value_is_numeric(value)
             self.assertTrue(res, "Value " + str(value) + " is not numeric.")
 
         values = ["200.23", "0.5", 999.999]
         for value in values:
-            res = workbench_utils.value_is_numeric(value, allow_decimals=True)
+            res = utils.value_is_numeric(value, allow_decimals=True)
             self.assertTrue(res, "Value " + str(value) + " is not numeric.")
 
     def test_value_is_not_numeric(self):
         values = ["n200", False, "999-1000"]
         for value in values:
-            res = workbench_utils.value_is_numeric(value)
+            res = utils.value_is_numeric(value)
             self.assertFalse(res, "Value " + str(value) + " is numeric.")
 
 
@@ -1042,7 +1044,7 @@ class TestCleanCsvValues(unittest.TestCase):
         clean_csv_record["five"] = "new lines"
         clean_csv_record["six"] = "a b c d e"
 
-        csv_record = workbench_utils.clean_csv_values(config, csv_record)
+        csv_record = csv_process.clean_csv_values(config, csv_record)
         self.assertEqual(clean_csv_record, csv_record)
 
     def test_clean_csv_values_skip_smart_quotes(self):
@@ -1054,7 +1056,7 @@ class TestCleanCsvValues(unittest.TestCase):
         clean_csv_record = collections.OrderedDict()
         clean_csv_record["smq1"] = "b‘bbxbbb’"
 
-        csv_record = workbench_utils.clean_csv_values(config, csv_record)
+        csv_record = csv_process.clean_csv_values(config, csv_record)
         self.assertEqual(clean_csv_record, csv_record)
 
     def test_clean_csv_values_skip_spaces(self):
@@ -1080,7 +1082,7 @@ class TestCleanCsvValues(unittest.TestCase):
         clean_csv_record["five"] = f"{newline}new lines{newline}"
         clean_csv_record["six"] = "a  b c    d  e"
 
-        csv_record = workbench_utils.clean_csv_values(config, csv_record)
+        csv_record = csv_process.clean_csv_values(config, csv_record)
         self.assertEqual(clean_csv_record, csv_record)
 
     def test_clean_csv_values_subdelimiters(self):
@@ -1097,7 +1099,7 @@ class TestCleanCsvValues(unittest.TestCase):
         clean_csv_record["two"] = "something"
         clean_csv_record["three"] = "something"
 
-        csv_record = workbench_utils.clean_csv_values(config, csv_record)
+        csv_record = csv_process.clean_csv_values(config, csv_record)
         self.assertEqual(clean_csv_record, csv_record)
 
         # Non-| dubdelimiter.
@@ -1111,7 +1113,7 @@ class TestCleanCsvValues(unittest.TestCase):
         clean_csv_record["one"] = "blsidlw"
         clean_csv_record["two"] = "something"
 
-        csv_record = workbench_utils.clean_csv_values(config, csv_record)
+        csv_record = csv_process.clean_csv_values(config, csv_record)
         self.assertEqual(clean_csv_record, csv_record)
 
         # Skipping the outside whitespace and subdelimiter.
@@ -1130,7 +1132,7 @@ class TestCleanCsvValues(unittest.TestCase):
         clean_csv_record["two"] = "something|"
         clean_csv_record["three"] = "something||"
 
-        csv_record = workbench_utils.clean_csv_values(config, csv_record)
+        csv_record = csv_process.clean_csv_values(config, csv_record)
         self.assertEqual(clean_csv_record, csv_record)
 
 
@@ -1143,16 +1145,16 @@ class TestValidateWeightValue(unittest.TestCase):
         res = validation.validate_weight_value("100")
         self.assertTrue(res)
 
-        res = workbench_utils.validate_media_track_value("004a")
+        res = validation.validate_media_track_value("004a")
         self.assertFalse(res)
 
-        res = workbench_utils.validate_media_track_value("-500")
+        res = validation.validate_media_track_value("-500")
         self.assertFalse(res)
 
-        res = workbench_utils.validate_media_track_value("_200")
+        res = validation.validate_media_track_value("_200")
         self.assertFalse(res)
 
-        res = workbench_utils.validate_media_track_value("page1")
+        res = validation.validate_media_track_value("page1")
         self.assertFalse(res)
 
 
@@ -1326,7 +1328,7 @@ class TestApplyCsvValueTemplates(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            output_row = workbench_utils.apply_csv_value_templates(
+            output_row = csv_process.apply_csv_value_templates(
                 fixture["config"], "csv_value_templates", fixture["row"]
             )
             self.assertEqual(fixture["control"], output_row)
@@ -1381,7 +1383,7 @@ class TestApplyCsvValueTemplates(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            output_row = workbench_utils.apply_csv_value_templates(
+            output_row = csv_process.apply_csv_value_templates(
                 fixture["config"],
                 "csv_value_templates_for_paged_content",
                 fixture["row"],
@@ -1426,7 +1428,7 @@ class TestApplyCsvValueTemplates(unittest.TestCase):
 
         for fixture in fixtures:
             rand_str_length = fixture["config"]["csv_value_templates_rand_length"]
-            output_row = workbench_utils.apply_csv_value_templates(
+            output_row = csv_process.apply_csv_value_templates(
                 fixture["config"], "csv_value_templates", fixture["row"]
             )
             # Sorry for the inscrutible {{{}}} in the regex quantifier...
@@ -1474,7 +1476,7 @@ class TestApplyCsvValueTemplates(unittest.TestCase):
 
         for fixture in fixtures:
             rand_str_length = fixture["config"]["csv_value_templates_rand_length"]
-            output_row = workbench_utils.apply_csv_value_templates(
+            output_row = csv_process.apply_csv_value_templates(
                 fixture["config"], "csv_value_templates", fixture["row"]
             )
             # Sorry about the inscrutible {{{rand_str_length}}} in the regex quantifier...
@@ -1517,7 +1519,7 @@ class TestApplyCsvValueTemplates(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            output_row = workbench_utils.apply_csv_value_templates(
+            output_row = csv_process.apply_csv_value_templates(
                 fixture["config"], "csv_value_templates", fixture["row"]
             )
             self.assertRegex(
@@ -1545,7 +1547,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "field_for_remote_filename": False,
         }
 
-        path = workbench_utils.get_preprocessed_file_path(
+        path = remote_utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record
         )
         expected_path = os.path.join(
@@ -1571,7 +1573,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "use_node_title_for_remote_filename": True,
         }
 
-        path = workbench_utils.get_preprocessed_file_path(
+        path = remote_utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record
         )
         expected_path = os.path.join(
@@ -1597,7 +1599,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "use_nid_in_remote_filename": True,
         }
 
-        path = workbench_utils.get_preprocessed_file_path(
+        path = remote_utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record, node_id=456
         )
         expected_path = os.path.join(
@@ -1624,7 +1626,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "field_for_remote_filename": "field_description",
         }
 
-        path = workbench_utils.get_preprocessed_file_path(
+        path = remote_utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record, node_id=456
         )
         expected_path = os.path.join(
@@ -1649,7 +1651,7 @@ class TestDeduplicateFieldValues(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            unique_values = workbench_utils.deduplicate_field_values(fixture["input"])
+            unique_values = utils.deduplicate_field_values(fixture["input"])
             self.assertEqual(fixture["control"], unique_values)
 
     def test_dictionaries(self):
@@ -1703,7 +1705,7 @@ class TestDeduplicateFieldValues(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            unique_values = workbench_utils.deduplicate_field_values(fixture["input"])
+            unique_values = utils.deduplicate_field_values(fixture["input"])
             self.assertEqual(fixture["control"], unique_values)
 
 
@@ -1738,7 +1740,7 @@ class TestMimeTypeFunctions(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            mimetype = workbench_utils.get_mimetype_from_extension(
+            mimetype = utils.get_mimetype_from_extension(
                 config, fixture["file_path"]
             )
             self.assertEqual(fixture["mime_type"], mimetype)
@@ -1761,7 +1763,7 @@ class TestMimeTypeFunctions(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            mimetype = workbench_utils.get_mimetype_from_extension(
+            mimetype = utils.get_mimetype_from_extension(
                 config, fixture["file_path"], lazy=True
             )
             self.assertEqual(fixture["mime_type"], mimetype)
@@ -1791,7 +1793,7 @@ class TestMimeTypeFunctions(unittest.TestCase):
         ]
 
         for fixture in fixtures:
-            mimetype = workbench_utils.get_mimetype_from_extension(
+            mimetype = utils.get_mimetype_from_extension(
                 config, fixture["file_path"]
             )
             self.assertEqual(fixture["mime_type"], mimetype)
@@ -1804,7 +1806,7 @@ class TestFileIsUtf8(unittest.TestCase):
         with os.scandir(input_files_dir) as files_to_test:
             for file_to_test in files_to_test:
                 if file_to_test.name.startswith("true_"):
-                    is_utf8 = workbench_utils.file_is_utf8(
+                    is_utf8 = utils.file_is_utf8(
                         os.path.join(input_files_dir, file_to_test)
                     )
                     self.assertEqual(is_utf8, True)
@@ -1815,7 +1817,7 @@ class TestFileIsUtf8(unittest.TestCase):
         with os.scandir(input_files_dir) as files_to_test:
             for file_to_test in files_to_test:
                 if file_to_test.name.startswith("false_"):
-                    is_utf8 = workbench_utils.file_is_utf8(
+                    is_utf8 = utils.file_is_utf8(
                         os.path.join(input_files_dir, file_to_test)
                     )
                     self.assertEqual(is_utf8, False)
@@ -2028,7 +2030,7 @@ class TestGeneralTests(unittest.TestCase):
     def test_node_only(self):
         """Tests that create_file returns None if nodes_only is set in config."""
         self.base_config["nodes_only"] = True
-        res = workbench_utils.create_file(
+        res = client.create_file(
             self.base_config,
             "/some/filename.txt",
             "field_file",
@@ -2041,7 +2043,7 @@ class TestGeneralTests(unittest.TestCase):
         """Tests that create_file returns None if the file field is a zero-length string."""
         csv_record = collections.OrderedDict()
         csv_record["field_file"] = ""
-        res = workbench_utils.create_file(
+        res = client.create_file(
             self.base_config,
             "/some/filename.txt",
             "field_file",
@@ -2056,7 +2058,7 @@ class TestGeneralTests(unittest.TestCase):
         csv_record = collections.OrderedDict()
         csv_record["field_file"] = "test_file_missing.txt"
         csv_record["id"] = "123"
-        res = workbench_utils.create_file(
+        res = client.create_file(
             self.base_config,
             "https://example.com/test_file_missing.txt",
             "field_file",
@@ -2070,7 +2072,7 @@ class TestGeneralTests(unittest.TestCase):
         csv_record = collections.OrderedDict()
         csv_record["field_file"] = "/some/nonexistent/filename.txt"
         csv_record["id"] = "123"
-        res = workbench_utils.create_file(
+        res = client.create_file(
             self.base_config,
             "/some/nonexistent/filename.txt",
             "field_file",
@@ -2084,7 +2086,7 @@ class TestGeneralTests(unittest.TestCase):
         csv_record = collections.OrderedDict()
         csv_record["field_file"] = "relative/nonexistent/filename.txt"
         csv_record["id"] = "123"
-        res = workbench_utils.create_file(
+        res = client.create_file(
             self.base_config,
             "relative/nonexistent/filename.txt",
             "field_file",
@@ -2131,9 +2133,7 @@ class TestGeneralTests(unittest.TestCase):
             "user-role-permissions.txt",
         )
         for hash_type, expected_hash in expected_hashes.items():
-            file_hash = workbench_utils.get_file_hash_from_local(
-                {}, test_file_path, hash_type
-            )
+            file_hash = utils.get_file_hash_from_local(test_file_path, hash_type)
             self.assertEqual(expected_hash, file_hash)
 
     def test_get_config(self):
@@ -2217,7 +2217,7 @@ class TestGeneralTests(unittest.TestCase):
         fake_response.status_code = 200
         mock_issue_request.return_value = fake_response
 
-        result = workbench_utils.ping_content_type(self.base_config)
+        result = client.ping_content_type(self.base_config)
 
         self.assertEqual(result, 200)
         expected_url = (
@@ -2237,7 +2237,7 @@ class TestGeneralTests(unittest.TestCase):
         fake_response.status_code = 404
         mock_issue_request.return_value = fake_response
 
-        result = workbench_utils.ping_content_type(self.base_config)
+        result = client.ping_content_type(self.base_config)
 
         self.assertEqual(result, 404)
 
@@ -2271,7 +2271,7 @@ class TestExpandUserInUtils(unittest.TestCase):
         with mock.patch(
             "workbench_utils.os.path.isfile", return_value=True
         ) as mock_isfile:
-            workbench_utils.check_file_exists({}, "~/test_file.txt")
+            utils.check_file_exists({}, "~/test_file.txt")
         called_path = mock_isfile.call_args[0][0]
         self.assertFalse(called_path.startswith("~"))
         self.assertEqual(called_path, os.path.expanduser("~/test_file.txt"))
@@ -2308,7 +2308,7 @@ class TestDownloadFileFromDrupal(unittest.TestCase):
         fake_response.content = b"file content"
         mock_requests_get.return_value = fake_response
 
-        result = workbench_utils.download_file_from_drupal(self.config, "1")
+        result = client.download_file_from_drupal(self.config, "1")
 
         self.assertEqual(result, os.path.join(self.export_dir, "file.jpg"))
         self.assertEqual(

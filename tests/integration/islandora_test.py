@@ -17,11 +17,13 @@ import subprocess
 import argparse
 import requests
 import json
-import unittest
 import time
 import copy
 import re
 import shutil
+
+from islandora_workbench import utils, drupal
+from islandora_workbench.drupal import client
 
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent.parent))
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent))
@@ -347,7 +349,7 @@ class TestCreateWithNewTypedRelation(WorkbenchTest):
         try:
             assert len(nids) == 1
 
-            term_id = workbench_utils.find_term_in_vocab(
+            term_id = client.find_term_in_vocab(
                 config, "person", "Kirk, James T."
             )
             assert term_id is not False
@@ -358,7 +360,7 @@ class TestCreateWithNewTypedRelation(WorkbenchTest):
                 + str(term_id)
                 + "?_format=json"
             )
-            workbench_utils.issue_request(config, "DELETE", term_endpoint)
+            drupal.issue_request(config, "DELETE", term_endpoint)
         finally:
             for nid in nids:
                 quick_delete_cmd = [
@@ -405,7 +407,7 @@ class TestDelete(WorkbenchTest):
             nids_to_delete_file_path = nid_file.name
             nid_file.write("node_id\n")
             for nid in nids:
-                if workbench_utils.value_is_numeric(nid):
+                if utils.value_is_numeric(nid):
                     nid_file.write(f"{nid}\n")
 
         yield {
@@ -472,7 +474,7 @@ class TestUpdate(WorkbenchTest):
             nid_file_path = nids_fh.name
             nids_fh.write("node_id\n")
             for nid in nids:
-                if workbench_utils.value_is_numeric(nid):
+                if utils.value_is_numeric(nid):
                     nids_fh.write(nid + "\n")
 
         # Add some values to the update CSV file to test against.
@@ -579,7 +581,7 @@ class TestImageAltText(WorkbenchTest):
             fh.write("node_id,image_alt_text\n")
             update_csv_path = fh.name
             for nid in nids:
-                if workbench_utils.value_is_numeric(nid):
+                if utils.value_is_numeric(nid):
                     fh.write(nid + ",A medieval cat")
 
         yield {
@@ -670,7 +672,7 @@ class TestCreateWithNonLatinText(WorkbenchTest):
             nid_file = fh.name
             fh.write("node_id\n")
             for nid in nids:
-                if workbench_utils.value_is_numeric(nid):
+                if utils.value_is_numeric(nid):
                     fh.write(nid + "\n")
 
         try:

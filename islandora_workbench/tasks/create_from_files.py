@@ -1,99 +1,189 @@
+import copy
+import json
 import os
-import sys
+from typing import Union
 
+from progress_bar import InitBar
+
+from islandora_workbench.data_io.rollback import RollbackMgr
+from islandora_workbench.exceptions import WorkbenchValidationException
 from islandora_workbench.tasks import register_task
 from islandora_workbench.tasks.base import Task
-from workbench_utils import check_for_required_config_keys, is_running_in_docker, value_is_numeric, \
-    check_rollback_file_path_directories
+from workbench_utils import get_entity_fields, set_model_from_extension, get_additional_files_config, set_media_type
+from islandora_workbench.external_scripts import execute_entity_post_task_script
+from islandora_workbench.drupal.client import create_media
+from islandora_workbench.data_io.output_csv import write_to_output_csv, OutputCSVWriter
+from islandora_workbench.drupal import get_required_bundle_fields, issue_request, get_field_definitions
+from islandora_workbench.utils import value_is_numeric
+
 
 @register_task("create_from_files")
 class CreateFromFilesTask(Task):
+
+    name = "create_from_files"
+    required_config_keys = ("task", "host", "username", "password")
+
     def __init__(self, ctx: dict):
         super().__init__(ctx)
-        self.ctx = ctx
+        self.required_fields = tuple(get_required_bundle_fields(
+            self.ctx["config"], "node", self.ctx["config"]["content_type"]
+            ))
+        self.field_configs["entity_field_definitions"] = get_field_definitions(self.ctx["config"], "node")
+        self.field_configs["additional_files"] = get_additional_files_config(self.ctx["config"])
+        if "output_csv" in self.config_keys:
+            fields_to_exclude = copy.copy(self.RESERVED_FIELDS)
+            fields_to_exclude.extend(self.field_configs["additional_files"].keys())
+            self.ctx["output_csv_writer"] = OutputCSVWriter(self.ctx, "ID", fields_to_exclude)
 
-    def check(self):
-        super().check()
-
+    def general_checks(self):
+        # Remove additional config keys that are not relevant for the create_from_files task.
         unwanted_in_create_from_files = ["delimiter", "subdelimiter", "allow_missing_files",
             "paged_content_from_directories", "paged_content_from_directories_parents_exist", "delete_media_with_nodes",
             "allow_adding_terms", ]
-        self.config_keys = [key for key in self.ctx.config.keys() if key not in unwanted_in_create_from_files]
+        self.config_keys = [key for key in self.config_keys if key not in unwanted_in_create_from_files]
 
-        create_required_options = ["task", "host", "username", "password"]
-        try:
-            check_for_required_config_keys(self.ctx.config, create_required_options, throw_exception=True)
-        except KeyError as e:
-            self.ctx.log.error(f"Missing required configuration key: {e}")
-            sys.exit(1)  # todo: replace with exception
-
-        if os.path.exists(self.ctx.config["input_dir"]) and os.path.isdir(self.ctx.config["input_dir"]):
-            message = 'OK, input directory "' + self.ctx.config["input_dir"] + '" found.'
-            self.ctx.log.info(message)
+        if os.path.exists(self.ctx["config"]["input_dir"]) and os.path.isdir(self.ctx["config"]["input_dir"]):
+            message = 'OK, input directory "' + self.ctx["config"]["input_dir"] + '" found.'
+            self.ctx["log"].info(message)
         else:
-            message = 'Input directory "' + self.ctx.config["input_dir"] + '"" not found.'
-            self.ctx.log.error(message)
-            sys.exit(1)  # todo: replace with exception
+            message = f'Input directory "{self.ctx["config"]["input_dir"]}" not found.'
+            self.ctx["log"].error(message)
+            raise WorkbenchValidationException(message)
 
         # Validate length of 'title'.
-        files = os.listdir(self.ctx.config["input_dir"])
+        files = os.listdir(self.ctx["config"]["input_dir"])
         for file_name in files:
             filename_without_extension = os.path.splitext(file_name)[0]
-            if len(filename_without_extension) > int(self.ctx.config["max_node_title_length"]):
+            if len(filename_without_extension) > int(self.ctx["config"]["max_node_title_length"]):
                 message = (
                         'The filename "' + filename_without_extension + "\" exceeds Drupal's maximum length of " +
-                        self.ctx.config["max_node_title_length"] + " characters and cannot be used for a node title.")
-                self.ctx.log.error(message)
-                sys.exit(1)  # todo: replace with exception
+                        self.ctx["config"]["max_node_title_length"] + " characters and cannot be used for a node title.")
+                self.ctx["log"].error(message)
+                raise WorkbenchValidationException(message)
 
         # Check that either 'model' or 'models' are present in the config file.
-        if "model" not in self.ctx.config and "models" not in self.ctx.config:
+        if "model" not in self.config_keys and "models" not in self.config_keys:
             message = 'You must include either the "model" or "models" option in your configuration.'
-            self.ctx.log.error(message)
-            sys.exit(1)  # todo: replace with exception
+            self.ctx["log"].error(message)
+            raise WorkbenchValidationException(message)
 
-        # If nothing has failed by now, exit with a positive message.
-        always_review_log_message = "" if self.ctx.config["perform_soft_checks"] is True else " However, you should review your Workbench log after running --check."
-        config_and_data_appear_to_be_valid_message = (
-            f"Configuration and input data appear to be valid.{always_review_log_message}")
-        self.ctx.log.info(config_and_data_appear_to_be_valid_message)
-
-        if self.ctx.config["csv_id_to_node_id_map_dir"] == self.ctx.config["temp_dir"]:
-            message = f'You should set your "csv_id_to_node_id_map_dir" config setting to a location other than your system\'s temporary directory ("{self.ctx.config["temp_dir"]}").'
-            # print("Warning: " + message)
-            self.ctx.log.warning(message)
-
-        if is_running_in_docker():
-            docker_message = (
-                "It appears you are running Workbench within a Docker container. Please ensure that your CSV ID to node ID map "
-                + "config setting defines a location accessible outside of the Docker container; otherwise, it might be deleted when you destroy or rebuild your Docker image."
-            )
-            print("Warning: " + docker_message)
-            self.ctx.log.warning(docker_message)
-        if (
-            self.ctx.config["recovery_mode_starting_from_node_id"] is not False
-            and value_is_numeric(self.ctx.config["recovery_mode_starting_from_node_id"]) is True
-        ):
-            message = f'"recovery_mode" option in effect. Items that have already been ingested with node IDs starting at {self.ctx.config["recovery_mode_starting_from_node_id"]} will be skipped.'
-            print(message)
-            self.ctx.log.info(message)
-
-        check_rollback_file_path_directories(self.ctx.config)
-
-
-
-    def prepare(self):
-        # Prepare for the create_from_files task (e.g., validate input, set up environment)
-        pass
+        self.field_configs["entity_fields"] = list(
+            get_entity_fields(self.ctx['config'], "node", self.ctx['config']["content_type"]).keys()
+        )
 
     def rows(self):
-        # Yield rows of data to be processed for the create_from_files task
-        pass
+        # No CSV for create_from_files, so return an iterator over the files in the input directory.
+        file_dir_path = self.ctx["config"]["input_dir"]
+        files = os.listdir(file_dir_path)
+        for file in files:
+            yield file
 
-    def process_row(self, row):
+    def prepare_run(self):
+        # Prepare for the create_from_files task (e.g., validate input, set up environment)
+        self.ctx["rollback"] = RollbackMgr(self.ctx)
+        if self.ctx["config"]["progress_bar"] is True:
+            row_count = len(os.listdir(self.ctx["config"]["input_dir"])) if os.path.exists(
+                self.ctx["config"]["input_dir"]
+                ) else 0
+            self.ctx["progress_bar"] = InitBar(size=row_count, title=f"Running {self.name} task")
+
+    def process_row(self, row: Union[dict, str], row_number: int):
         # Implement the logic to process each row for the create_from_files task
-        pass
+        file_name = str(row)  # For readability, we can refer to the row as file_name since it's a file name in this context.
+        if (
+            self.ctx["config"]["recovery_mode_starting_from_node_id"] is not False
+            and value_is_numeric(self.ctx["config"]["recovery_mode_starting_from_node_id"]) is True
+        ):
+            nid_in_map = self.ctx["node_map"].get_node_id_recovery_mode(file_name)
+            if nid_in_map is not False or not None:
+                message = f"File {file_name} has already been ingested at ({self.ctx['config']['host']}/node/{nid_in_map}), skipping it."
+                self.ctx["log"].info(message)
+                return
+            if file_name.startswith("rollback.") and file_name.endswith("csv"):
+                return
+            if self.ctx["config"]["csv_id_to_node_id_map_path"] is not False and str(file_name).endswith(
+                    self.ctx["config"]["csv_id_to_node_id_map_path"]
+            ):
+                return
 
-    def finish(self):
-        # Finalize the create_from_files task (e.g., summarize results, clean up)
+        filename_without_extension = os.path.splitext(file_name)[0]
+        if len(filename_without_extension) > self.ctx["config"]["max_node_title_length"]:
+            message = (
+                    'Truncating the filename "' + filename_without_extension + '" since it exceeds maximum node title length of ' + str(
+                self.ctx["config"]["max_node_title_length"]
+                ) + " characters.")
+            self.ctx["log"].error(message)
+            filename_without_extension = filename_without_extension[:255]
+
+        node_json = {"type": [{"target_id": self.ctx["config"]["content_type"], "target_type": "node_type"}],
+            "title": [{"value": filename_without_extension}], }
+
+        entity_fields = get_entity_fields(self.ctx["config"], "node", self.ctx["config"]["content_type"]).keys()
+        if "field_model" in entity_fields:
+            islandora_model = set_model_from_extension(file_name, self.ctx["config"])
+            node_json["field_model"] = [{"target_id": islandora_model, "target_type": "taxonomy_term"}]
+
+        node_headers = {"Content-Type": "application/json"}
+        node_endpoint = "/node?_format=json"
+        node_response = issue_request(
+            self.ctx["config"], "POST", node_endpoint, node_headers, node_json, None
+        )
+        if node_response.status_code != 201:
+            self.ctx["log"].error(
+                f'Node for "{os.path.join(self.ctx["config"]["input_dir"], file_name)}" not created, HTTP response code was {node_response.status_code}.'
+            )
+            self.ctx["log"].error(
+                f'JSON request body used in previous POST to "{node_endpoint}" was {node_json}.', log_only=True
+            )
+        else:
+            returned_node = json.loads(node_response.text)
+            node_id = returned_node["nid"][0]["value"]
+            node_uri = self.ctx["config"]["host"] + "/node/" + str(node_id)
+
+            self.ctx["log"].info(f'Node for "{filename_without_extension}" created at {node_uri}.', log_only=self.ctx["config"]["progress_bar"])
+            if "output_csv" in self.config_keys:
+                self.ctx["output_csv_writer"].write_to_output_csv("", node_response.text)
+
+            node_nid = node_uri.rsplit("/", 1)[-1]
+
+            self.ctx["rollback"].write_rollback_node_id(node_nid, "", filename_without_extension, file_name, "")
+            self.ctx["node_map"].add_mapping("", "", node_nid, file_name)
+
+            # Execute node-specific post-create scripts, if any are configured.
+            if "node_post_create" in self.config_keys and len(self.ctx["config"]["node_post_create"]) > 0:
+                for command in self.ctx["config"]["node_post_create"]:
+                    (post_task_output, post_task_return_code,) = execute_entity_post_task_script(
+                        command, self.ctx["config"]["config_file"], node_response.status_code, node_response.text
+                    )
+                    if post_task_return_code == 0:
+                        self.ctx["log"].info(
+                            f"Post node create script {command} executed successfully."
+                        )
+                    else:
+                        self.ctx["log"].error(f"Post node create script {command} failed.")
+
+            file_path = os.path.join(self.ctx["config"]["input_dir"], file_name)
+            fake_csv_record = {
+                "title": filename_without_extension,
+                "file": file_path
+            }
+            media_type = set_media_type(self.ctx["config"], file_path, "file", fake_csv_record)
+
+            if media_type == "image":
+                fake_csv_record["image_alt_text"] = filename_without_extension
+
+            media_response_status_code = create_media(
+                self.ctx["config"], file_name, "file", node_nid, fake_csv_record
+            )
+            if media_response_status_code in [201, 204]:
+                self.ctx["log"].info(
+                    f"Media for {file_path} created.",
+                    log_only=self.ctx["config"]["progress_bar"],
+                )
+
+            if self.ctx["config"]["progress_bar"] is True:
+                self.ctx["progress_bar"].updateAmount(1)
+
+    def check_row(self, row: Union[dict, str], row_number: int):
+        # No CSV so no row checking for create_from_files.
         pass

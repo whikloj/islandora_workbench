@@ -13,6 +13,9 @@ from pathlib import Path
 
 import pytest
 
+from islandora_workbench import external_scripts
+from islandora_workbench.data_io.csv import csv_process
+
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent.parent))
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent))
 from workbench_test_class import (
@@ -21,7 +24,6 @@ from workbench_test_class import (
     cleanup_paths,
     WB_INTEGRATION_TEST_HOST,
 )
-import workbench_utils
 
 
 class TestExecuteBootstrapScript(WorkbenchTest):
@@ -49,7 +51,7 @@ class TestExecuteBootstrapScript(WorkbenchTest):
     def test_execute_python_script(self, setup_nodes):
 
         config = {"show_bootstrap_script_output": False}
-        output, return_code = workbench_utils.execute_bootstrap_script(
+        output, return_code = external_scripts.execute_bootstrap_script(
             config, setup_nodes["script_path"], setup_nodes["config_file_path"]
         )
         assert output.strip() == "Hello"
@@ -61,7 +63,7 @@ class TestExecuteBootstrapScript(WorkbenchTest):
         config = {"show_bootstrap_script_output": False}
         # 3 tokens: interpreter + flag + script.
         command = f"{sys.executable} -u {setup_nodes['script_path']}"
-        output, return_code = workbench_utils.execute_bootstrap_script(
+        output, return_code = external_scripts.execute_bootstrap_script(
             config, command, setup_nodes["config_file_path"]
         )
         assert output.strip() == "Hello"
@@ -75,7 +77,7 @@ class TestExecutePreprocessorScript:
             dir_path, "..", "assets", "preprocess_field_data", "script.py"
         )
         config = {"subdelimiter": "|", "config_file_path": ""}
-        output, return_code = workbench_utils.preprocess_field_data(
+        output, return_code = csv_process.preprocessor_scripts_field_data(
             config, "hello", script_path
         )
         assert output.strip() == "HELLO"
@@ -89,7 +91,7 @@ class TestExecutePreprocessorScript:
         )
         config = {"subdelimiter": "|", "config_file_path": ""}
         command = f"{sys.executable} -u {script_path}"
-        output, return_code = workbench_utils.preprocess_field_data(
+        output, return_code = csv_process.preprocessor_scripts_field_data(
             config, "hello", command
         )
         assert output.strip() == "HELLO"
@@ -100,7 +102,7 @@ class TestExecutePreprocessorScript:
             dir_path, "..", "assets", "preprocess_field_data", "script.py"
         )
         config = {"subdelimiter": "|", "config_file_path": ""}
-        output, return_code = workbench_utils.preprocess_field_data(
+        output, return_code = csv_process.preprocessor_scripts_field_data(
             config, "hello|there", script_path
         )
         assert output.strip() == "HELLO|THERE"

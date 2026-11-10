@@ -12,44 +12,28 @@ import requests
 import workbench_utils
 import sys
 
+from islandora_workbench import utils, drupal
 from islandora_workbench.checks import validation
-from islandora_workbench.data_io import csv_data
+from islandora_workbench.data_io.csv import csv_reader
 from islandora_workbench.exceptions import WorkbenchValidationException
-from workbench_utils import (
-    ping_islandora,
-    check_integration_module_version, get_entity_fields,
-    check_rollback_file_path_directories,
-    check_for_required_config_keys,
-    create_temp_dir,
-    validate_input_dir,
-    check_csv_file_exists,
-    replace_field_labels_with_names,
-    ping_remote_file,
-    get_field_definitions,
-    validate_csv_field_length,
-    validate_text_list_fields,
-    validate_numeric_fields,
-    validate_media_track_fields,
-    ping_node,
-    get_entity_reference_view_endpoints,
-    ping_view_endpoint,
-    validate_language_code,
-    set_media_type,
-    ping_media_bundle,
-    get_remote_file_extension,
-    get_registered_media_extensions,
-    get_additional_files_config,
-    validate_media_use_tid_in_additional_files_setting,
-    check_file_exists,
-    paged_content_ignore_file,
-    get_sequence_indicator_from_filename, file_is_utf8,
-    ping_media,
-    ping_term,
-    get_file_hash_from_local,
-    generate_contact_sheet_from_csv,
-)
-from islandora_workbench.data_io.csv_data import CsvReader
-from islandora_workbench.checks.validation import validate_weight_value
+from workbench_utils import (get_entity_fields, check_csv_file_exists, ping_remote_file,
+                             get_field_definitions, get_entity_reference_view_endpoints,
+                             ping_view_endpoint, set_media_type,
+                             ping_media_bundle, get_registered_media_extensions,
+                             get_additional_files_config, paged_content_ignore_file, ping_media, )
+from islandora_workbench.data_io.contact_sheet import generate_contact_sheet_from_csv
+from islandora_workbench.checks.internal import check_rollback_file_path_directories
+from islandora_workbench.utils.remote_utils import get_remote_file_extension
+from islandora_workbench.data_io.csv.csv_process import replace_field_labels_with_names
+from islandora_workbench.drupal.client import ping_node, ping_term
+from islandora_workbench.drupal.utils import validate_language_code
+from islandora_workbench.utils import file_is_utf8, get_sequence_indicator_from_filename, get_file_hash_from_local, \
+    create_temp_dir, check_for_required_config_keys, check_integration_module_version, check_file_exists
+from islandora_workbench.drupal import ping_islandora, client
+from islandora_workbench.data_io.csv.csv_reader import CsvReader
+from islandora_workbench.checks.validation import validate_weight_value, validate_media_track_fields, \
+    validate_numeric_fields, validate_csv_field_length, validate_text_list_fields, validate_input_dir, \
+    validate_media_use_tid_in_additional_files_setting
 
 
 def check(self):
@@ -103,7 +87,7 @@ def _simple_config_checks(config: dict):
 
     if config[
         "recovery_mode_starting_from_node_id"
-    ] and workbench_utils.value_is_numeric(
+    ] and utils.value_is_numeric(
         config["recovery_mode_starting_from_node_id"]
     ):
         message = f'"recovery_mode" option in effect. Items that have already been ingested with node IDs starting at {config["recovery_mode_starting_from_node_id"]} will be skipped.'
@@ -127,7 +111,7 @@ def _check_host_values(config: dict, field_names: list):
         )
         or (
             config["recovery_mode_starting_from_node_id"] is not False
-            and workbench_utils.value_is_numeric(
+            and utils.value_is_numeric(
                 config["recovery_mode_starting_from_node_id"]
             )
             is True
@@ -309,7 +293,7 @@ def _check_media_csv_headers(config: dict, csv_headers: list):
 
 
 def task_specific_checks(
-    config: dict, reader: csv_data.CsvReader, reserved_fields: list
+    config: dict, reader: csv_reader.CsvReader, reserved_fields: list
 ):
     """Perform checks specific to the task defined in the configuration file. These checks are in addition to the more general checks performed in _simple_config_checks() and _check_host_values().
     Parameters
@@ -523,7 +507,7 @@ def _generate_media_field_list(config: dict, csv_column_headers: list) -> dict:
 
 def _task_specific_checks_create(
     config: dict,
-    reader: csv_data.CsvReader,
+    reader: csv_reader.CsvReader,
     reserved_fields: list,
     node_base_fields: list,
     csv_column_headers: list,
@@ -582,13 +566,13 @@ def _task_specific_checks_create(
         )
     if "parent_id" in csv_column_headers:
         # TODO: Move into CSV preprocessing to avoid having to read the CSV file twice.
-        workbench_utils.validate_parent_ids_precede_children(config, reader)
+        validation.validate_parent_ids_precede_children(config, reader)
         workbench_utils.prepare_csv_id_to_node_id_map(config)
         if config["query_csv_id_to_node_id_map_for_parents"] is True:
             validate_parent_ids_in_csv_id_to_node_id_map_csv_data = (
                 reader.get_csv_data()
             )
-            workbench_utils.validate_parent_ids_in_csv_id_to_node_id_map(
+            validation.validate_parent_ids_in_csv_id_to_node_id_map(
                 config, validate_parent_ids_in_csv_id_to_node_id_map_csv_data
             )
         else:
@@ -676,10 +660,8 @@ def _task_specific_checks_create(
 
     # Check the configuration that is necessary for verifying nodes already exist in the target Drupal.
     if "node_exists_verification_view_endpoint" in config:
-        node_exists_config = workbench_utils.get_node_exists_verification_view_endpoint(
-            config
-        )
-        if node_exists_config is not False:
+        node_exists_config = config["paged_content_from_directories_parents_exist"]
+        if len(node_exists_config) > 0:
             if node_exists_config[0] not in csv_column_headers:
                 message = f'CSV column identified in "node_exists_verification_view_endpoint" is not in your CSV file.'
                 logging.error(message)
@@ -800,7 +782,7 @@ def _task_specific_checks_create(
         logging.warning(message)
 
     # Check that Drupal fields that are required are in the 'create' task CSV file.
-    required_drupal_fields_node = workbench_utils.get_required_bundle_fields(
+    required_drupal_fields_node = drupal.get_required_bundle_fields(
         config, "node", config["content_type"]
     )
     missing_required_fields = [
@@ -829,7 +811,7 @@ def _task_specific_checks_create(
     logging.info(message)
 
     if not config["nodes_only"]:
-        workbench_utils.validate_media_use_tid(config)
+        validation.validate_media_use_tid(config)
 
     if config["fixity_algorithm"] is not None:
         allowed_algorithms = ["md5", "sha1", "sha256"]
@@ -899,7 +881,7 @@ def _task_specific_checks_create(
     has_new_typed_relation_terms = False
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
         try:
-            workbench_utils.validate_required_fields_have_values_action(
+            validation.validate_required_fields_have_values_action(
                 config, required_drupal_fields_node, row
             )
         except WorkbenchValidationException as e:
@@ -929,7 +911,7 @@ def _task_specific_checks_create(
             for field_value in delimited_field_values:
                 if len(field_value.strip()) > 0:
                     try:
-                        workbench_utils.validate_media_use_tid(
+                        validation.validate_media_use_tid(
                             config, field_value, row[config["id_field"]]
                         )
                     except WorkbenchValidationException as e:
@@ -946,9 +928,7 @@ def _task_specific_checks_create(
                     filepath = Path(file_name)
                     if not filepath.is_absolute():
                         filepath = Path(config["input_dir"]) / filepath
-                    hash_from_local = workbench_utils.get_file_hash_from_local(
-                        config, str(filepath), config["fixity_algorithm"]
-                    )
+                    hash_from_local = utils.get_file_hash_from_local(str(filepath), config["fixity_algorithm"])
                     if (
                         hash_from_local is not False
                         and hash_from_local == row["checksum"].strip()
@@ -1043,7 +1023,7 @@ def _task_specific_checks_create(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_edtf_date(
+                    ) > 0 and not validation.validate_edtf_date(
                         field_value.strip()
                     ):
                         message = (
@@ -1217,7 +1197,7 @@ def _task_specific_checks_create(
 
 def _task_specific_checks_update(
     config: dict,
-    reader: csv_data.CsvReader,
+    reader: csv_reader.CsvReader,
     node_base_fields: list,
     csv_column_headers: list,
 ):
@@ -1391,7 +1371,7 @@ def _task_specific_checks_update(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_edtf_date(
+                    ) > 0 and not validation.validate_edtf_date(
                         field_value.strip()
                     ):
                         message = (
@@ -1526,7 +1506,7 @@ def _task_specific_checks_update(
 
 
 def _task_specific_checks_update_media(
-    config: dict, reader: csv_data.CsvReader
+    config: dict, reader: csv_reader.CsvReader
 ):
     """Checks specific to "update_media" tasks. Note that some checks are the same as for "create_media tasks, but there are also some differences, so we have a separate function for "update_media" task checks.
     Parameters
@@ -1554,7 +1534,7 @@ def _task_specific_checks_update_media(
 
 
 def _task_specific_checks_update_media_by_node(
-    config: dict, reader: csv_data.CsvReader
+    config: dict, reader: csv_reader.CsvReader
 ):
     """Checks specific to "update_media_by_node" tasks. Note that some checks are the same as for "create_media tasks, but there are also some differences, so we have a separate function for "update_media_by_node" task checks.
     Parameters
@@ -1562,7 +1542,7 @@ def _task_specific_checks_update_media_by_node(
     :param reader: WorkbenchCsvReader - the CSV reader object
     """
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
-        node_media_ids = workbench_utils.get_node_media_ids(
+        node_media_ids = client.get_node_media_ids(
             config,
             row[config["id_field"]],
             media_use_tids=config["update_media_by_node_media_use_tids"],
@@ -1583,7 +1563,7 @@ def _task_specific_checks_update_media_by_node(
 
 
 def _task_specific_checks_add_media(
-    config: dict, reader: csv_data.CsvReader
+    config: dict, reader: csv_reader.CsvReader
 ):
     """Checks specific to "add_media" tasks. Note that some checks are the same as for "create_media tasks, but there are also some differences, so we have a separate function for add_media" task checks.
     Parameters
@@ -1617,7 +1597,7 @@ def _task_specific_checks_add_media(
         )
 
     # Validate config setting of "media_use_tid" first
-    workbench_utils.validate_media_use_tid(config)
+    validation.validate_media_use_tid(config)
 
     csv_data = reader.get_csv_data()
     for count, row in enumerate(csv_data, start=1):
@@ -1628,7 +1608,7 @@ def _task_specific_checks_add_media(
                 )
                 for field_value in delimited_field_values:
                     if len(field_value.strip()) > 0:
-                        workbench_utils.validate_media_use_tid(
+                        validation.validate_media_use_tid(
                             config, field_value, row[config["id_field"]]
                         )
 
@@ -1643,9 +1623,7 @@ def _task_specific_checks_add_media(
                         filepath = Path(file_name)
                         if not filepath.is_absolute():
                             filepath = Path(config["input_dir"]) / filepath
-                        hash_from_local = workbench_utils.get_file_hash_from_local(
-                            config, str(filepath), config["fixity_algorithm"]
-                        )
+                        hash_from_local = utils.get_file_hash_from_local(str(filepath), config["fixity_algorithm"])
                         if hash_from_local is False:
                             continue
                         if "checksum" in row:
@@ -1708,7 +1686,7 @@ def _task_specific_checks_add_media(
 
 
 def _task_specific_checks_create_terms(
-    config: dict, reader: csv_data.CsvReader, csv_headers: list
+    config: dict, reader: csv_reader.CsvReader, csv_headers: list
 ):
     """Checks specific to "create_terms" tasks.
     Parameters
@@ -1722,7 +1700,7 @@ def _task_specific_checks_create_terms(
     )
 
     # Check here that all required fields are present in the CSV.
-    required_fields = workbench_utils.get_required_bundle_fields(
+    required_fields = drupal.get_required_bundle_fields(
         config, "taxonomy_term", config["vocab_id"]
     )
     required_fields.insert(0, "term_name")
@@ -1854,7 +1832,7 @@ def _task_specific_checks_create_terms(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_edtf_date(
+                    ) > 0 and not validation.validate_edtf_date(
                         field_value.strip()
                     ):
                         message = (
@@ -2001,7 +1979,7 @@ def _task_specific_checks_create_terms(
 
 
 def _task_specific_checks_update_terms(
-    config: dict, reader: csv_data.CsvReader, csv_column_headers: list
+    config: dict, reader: csv_reader.CsvReader, csv_column_headers: list
 ):
     """Checks specific to "update_terms" tasks.
     Parameters
@@ -2158,7 +2136,7 @@ def _task_specific_checks_update_terms(
                 for field_value in delimited_field_values:
                     if len(
                         field_value.strip()
-                    ) > 0 and not workbench_utils.validate_edtf_date(
+                    ) > 0 and not validation.validate_edtf_date(
                         field_value.strip()
                     ):
                         message = (
@@ -2309,7 +2287,7 @@ def _task_specific_checks_update_terms(
 
 
 def _task_specific_checks_add_or_update_alt_text(
-    config: dict, reader: csv_data.CsvReader
+    config: dict, reader: csv_reader.CsvReader
 ):
     """Checks specific to "add_alt_text" or "update_alt_text" tasks.
     Parameters
@@ -2341,7 +2319,7 @@ def _task_specific_checks_add_or_update_alt_text(
     for row_counter, row in enumerate(reader.get_csv_data(), start=1):
         if len(row[config["id_field"]]) > 0:
             node_id = row[config["id_field"]]
-            parent_node_exists = workbench_utils.ping_node(
+            parent_node_exists = client.ping_node(
                 config, row[config["id_field"]], warn=False
             )
             if parent_node_exists is False:
@@ -2694,9 +2672,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
         # Check the configuration that is necessary for enabling use of term names in Entity Reference Views fields.
         if "entity_reference_view_endpoints" in config:
-            entity_reference_view_endpoints = get_entity_reference_view_endpoints(
-                config
-            )
+            entity_reference_view_endpoints = config["entity_reference_view_endpoints"]
             for (
                 entity_reference_view_field_name,
                 entity_reference_view_endpoint,
@@ -3722,9 +3698,7 @@ def check_input(config: dict, args: Namespace) -> None:
 
     if "check_lock_file_path" in config:
         with open(config["check_lock_file_path"], "a") as check_lock_file:
-            config_file_md5 = get_file_hash_from_local(
-                config, config["config_file_path"], "md5"
-            )
+            config_file_md5 = get_file_hash_from_local(config["config_file_path"], "md5")
             check_lock_file.write(
                 f'Check against {config["config_file_path"]} (md5 hash {config_file_md5}) OK'
             )
