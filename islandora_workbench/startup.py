@@ -10,10 +10,11 @@ import requests
 from islandora_workbench.config import WorkbenchConfig, print_config, do_overrides
 from islandora_workbench.context import initialize_context
 from islandora_workbench.drupal.client import get_integration_module_version, ping_islandora, \
-    get_mid_from_media_url_alias, remove_media_and_file, issue_request
-from islandora_workbench.drupal.utils import get_nid_from_url_alias
+    get_mid_from_media_url_alias, issue_request
+from islandora_workbench.drupal.media import remove_media_and_file
+from islandora_workbench.drupal.node import get_nid_from_url_alias
 from islandora_workbench.tasks import get_task
-from islandora_workbench.utils.string_utils import value_is_numeric
+from islandora_workbench.utils import value_is_numeric
 
 
 def startup(args: argparse.Namespace):

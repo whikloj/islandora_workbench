@@ -10,9 +10,9 @@ from islandora_workbench.utils import value_is_numeric
 from workbench_utils import get_additional_files_config, patch_revision_log_message
 from islandora_workbench.external_scripts import execute_entity_post_task_script
 from islandora_workbench.data_io.csv.csv_process import preprocessor_scripts_csv_row
-from islandora_workbench.drupal.client import ping_node, get_entity_fields, is_revisions_enabled, update_node, \
-    create_url_alias
-from islandora_workbench.drupal.utils import validate_language_code, get_nid_from_url_alias
+from islandora_workbench.drupal.client import ping_node, get_entity_fields, is_revisions_enabled, create_url_alias
+from islandora_workbench.drupal.node import update_node, get_nid_from_url_alias
+from islandora_workbench.drupal.utils import validate_language_code
 from islandora_workbench.checks.validation import validate_url_aliases_action, \
     validate_geolocation_fields_action, validate_input_dir, validate_node_created_date_action, \
     validate_link_fields_action, validate_authority_link_value_action, validate_taxonomy_reference_value_action, \

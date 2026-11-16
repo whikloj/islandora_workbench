@@ -3,6 +3,8 @@ import subprocess
 from typing import Union
 
 from islandora_workbench.drupal.client import get_mid_from_media_url_alias, get_tid_from_term_url_alias
+from islandora_workbench.drupal.node import get_nid_from_url_alias
+from islandora_workbench.utils import value_is_numeric
 
 
 def run_bootstrap_scripts(ctx: dict):

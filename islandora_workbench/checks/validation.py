@@ -11,7 +11,7 @@ import edtf_validate.valid_edtf
 from islandora_workbench.data_io.csv.csv_reader import CsvReader
 from islandora_workbench.exceptions import WorkbenchValidationException
 
-from islandora_workbench.utils.string_utils import service_file_present, value_is_numeric
+from islandora_workbench.utils import service_file_present, value_is_numeric
 from islandora_workbench.drupal.client import ping_url_alias, get_term_id_from_uri, get_term_vocab, find_term_in_vocab, \
     ping_uid, ping_view_endpoint
 from islandora_workbench.drupal.utils import validate_language_code

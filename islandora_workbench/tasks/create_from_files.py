@@ -6,15 +6,18 @@ from typing import Union
 from progress_bar import InitBar
 
 from islandora_workbench.data_io.rollback import RollbackMgr
+from islandora_workbench.drupal.fields import get_required_bundle_fields, get_field_definitions
 from islandora_workbench.exceptions import WorkbenchValidationException
 from islandora_workbench.tasks import register_task
 from islandora_workbench.tasks.base import Task
-from workbench_utils import get_entity_fields, set_model_from_extension, get_additional_files_config, set_media_type
-from islandora_workbench.external_scripts import execute_entity_post_task_script
-from islandora_workbench.drupal.client import create_media
-from islandora_workbench.data_io.output_csv import write_to_output_csv, OutputCSVWriter
-from islandora_workbench.drupal import get_required_bundle_fields, issue_request, get_field_definitions
 from islandora_workbench.utils import value_is_numeric
+from workbench_utils import set_model_from_extension, set_media_type
+from islandora_workbench.external_scripts import execute_entity_post_task_script
+from islandora_workbench.drupal.client import get_entity_fields
+from islandora_workbench.drupal.node import create_node
+from islandora_workbench.drupal.media import create_media
+from islandora_workbench.data_io.output_csv import OutputCSVWriter
+
 
 
 @register_task("create_from_files")
@@ -29,7 +32,10 @@ class CreateFromFilesTask(Task):
             self.ctx["config"], "node", self.ctx["config"]["content_type"]
             ))
         self.field_configs["entity_field_definitions"] = get_field_definitions(self.ctx["config"], "node")
-        self.field_configs["additional_files"] = get_additional_files_config(self.ctx["config"])
+        if "additional_files" in self.ctx["config"] and len(self.ctx["config"]["additional_files"]) > 0:
+            self.field_configs["additional_files"] = self.ctx["config"]["additional_files"]
+        else:
+            self.field_configs["additional_files"] = {}
         if "output_csv" in self.config_keys:
             fields_to_exclude = copy.copy(self.RESERVED_FIELDS)
             fields_to_exclude.extend(self.field_configs["additional_files"].keys())
@@ -123,26 +129,23 @@ class CreateFromFilesTask(Task):
             islandora_model = set_model_from_extension(file_name, self.ctx["config"])
             node_json["field_model"] = [{"target_id": islandora_model, "target_type": "taxonomy_term"}]
 
-        node_headers = {"Content-Type": "application/json"}
-        node_endpoint = "/node?_format=json"
-        node_response = issue_request(
-            self.ctx["config"], "POST", node_endpoint, node_headers, node_json, None
-        )
-        if node_response.status_code != 201:
+        response_data, response_meta = create_node(self.ctx, node_json)
+
+        if response_meta["status_code"] != 201:
             self.ctx["log"].error(
-                f'Node for "{os.path.join(self.ctx["config"]["input_dir"], file_name)}" not created, HTTP response code was {node_response.status_code}.'
+                f'Node for "{os.path.join(self.ctx["config"]["input_dir"], file_name)}" not created, HTTP response code was {response_meta["status_code"]}.'
             )
             self.ctx["log"].error(
-                f'JSON request body used in previous POST to "{node_endpoint}" was {node_json}.', log_only=True
+                f'JSON request body used in previous POST to "{self.ctx["config"]["host"]}/node?_format=json" was {node_json}.', log_only=True
             )
         else:
-            returned_node = json.loads(node_response.text)
+            returned_node = response_data
             node_id = returned_node["nid"][0]["value"]
             node_uri = self.ctx["config"]["host"] + "/node/" + str(node_id)
 
             self.ctx["log"].info(f'Node for "{filename_without_extension}" created at {node_uri}.', log_only=self.ctx["config"]["progress_bar"])
             if "output_csv" in self.config_keys:
-                self.ctx["output_csv_writer"].write_to_output_csv("", node_response.text)
+                self.ctx["output_csv_writer"].write_to_output_csv("", response_data)
 
             node_nid = node_uri.rsplit("/", 1)[-1]
 
@@ -153,7 +156,7 @@ class CreateFromFilesTask(Task):
             if "node_post_create" in self.config_keys and len(self.ctx["config"]["node_post_create"]) > 0:
                 for command in self.ctx["config"]["node_post_create"]:
                     (post_task_output, post_task_return_code,) = execute_entity_post_task_script(
-                        command, self.ctx["config"]["config_file"], node_response.status_code, node_response.text
+                        command, self.ctx["config"]["config_file"], response_meta["status_code"], json.dumps(response_data)
                     )
                     if post_task_return_code == 0:
                         self.ctx["log"].info(

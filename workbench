@@ -14,9 +14,10 @@ from islandora_workbench.checks.validation import validate_input_dir
 from islandora_workbench.drupal import issue_request, verify_node_exists_by_key
 from islandora_workbench.data_io.csv.csv_process import preprocessor_scripts_csv_row
 from islandora_workbench.data_io.rollback import write_rollback_config, prep_rollback_csv
-from islandora_workbench.drupal.client import ping_node, ping_term, create_url_alias, create_media, \
-    patch_image_alt_text, create_file, get_node_media_summary, get_term_field_values
-from islandora_workbench.drupal.utils import get_nid_from_url_alias, get_media_field_values
+from islandora_workbench.drupal.client import ping_node, ping_term, create_url_alias, patch_image_alt_text, create_file, \
+    get_term_field_values
+from islandora_workbench.drupal.node import get_node_media_summary, get_nid_from_url_alias
+from islandora_workbench.drupal.media import create_media, get_media_field_values
 from islandora_workbench.external_scripts import execute_bootstrap_script, execute_script_to_run, \
     execute_entity_post_task_script, execute_shutdown_script
 from islandora_workbench.startup import quick_delete_media, quick_delete_node

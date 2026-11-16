@@ -1,3 +1,6 @@
+"""A simple class to manage the node ID to CSV ID mapping in a SQLite3 database. If query_csv_id_to_node_id_map_for_parents=False then
+use a in-memory database that will not persist between runs but allows for identical usage in the codebase."""
+
 from pathlib import Path
 import sqlite3
 from typing import Union
@@ -95,7 +98,7 @@ class NodeIdMap:
         """Get the node ID for a given CSV ID from the database.
 
         :param csv_id: The CSV ID of the node.
-        :return str|list|None: The Drupal node ID of the node, a list of node IDs, or None if not found.
+        :return str|list|None: The  node ID of the Drupal node, a list of node IDs, or None if not found.
         """
         conn = self.get_connection()
         return_one = self.ctx["config"]["ignore_duplicate_parent_ids"]
@@ -176,7 +179,7 @@ class NodeIdMap:
         result = conn.execute(query, (self.ctx["config"]["config_file"],))
         return int(result.fetchone()[0])
 
-    def get_last_ids(self):
+    def get_last_ids(self) -> tuple:
         """Get the last node_id and csv_id from the database for the current config file.
         :return tuple: (node_id, csv_id) or (None, None) if no records exist.
         """

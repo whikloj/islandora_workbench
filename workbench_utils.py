@@ -30,10 +30,10 @@ from islandora_workbench.data_io.csv.csv_cache import get_extracted_csv_file_pat
     get_csv_from_google_sheet
 from islandora_workbench.data_io.output_csv import write_to_output_csv
 from islandora_workbench.data_io.rollback import write_rollback_node_id
-from islandora_workbench.drupal.client import get_term_id_from_uri, get_mid_from_media_url_alias, get_node_media_ids
-from islandora_workbench.utils import value_is_numeric, string_is_ascii, execute_subprocess_script, \
-    get_sequence_indicator_from_filename, get_file_hash_from_local, check_file_exists
-from islandora_workbench.utils.remote_utils import get_remote_file_extension, get_preprocessed_file_path
+from islandora_workbench.drupal.client import get_term_id_from_uri, get_mid_from_media_url_alias
+from islandora_workbench.drupal.media import get_node_media_ids
+from islandora_workbench.utils import value_is_numeric
+from islandora_workbench.utils import get_remote_file_extension, get_preprocessed_file_path
 
 install()
 
@@ -85,14 +85,12 @@ def set_media_type(
     """
     if "media_type" in config:
         return config["media_type"]
-    if config["media_type_by_media_use"] and len(config["media_type_by_media_use"]) > 0:
+
+    if config["media_type_by_media_use"] and len(config["media_type_by_media_use"]) > 0 and "additional_files" in config and len(config["additional_files"]) > 0 and file_fieldname in config["additional_files"]:
         additional_files = get_additional_files_config(config)
-        media_url = additional_files.get(file_fieldname)
-        if file_fieldname in additional_files:
-            for entry in config["media_type_by_media_use"]:
-                for key, value in entry.items():
-                    if key == media_url:
-                        return value
+        media_url = additional_files.get(file_fieldname, None)
+        if media_url is not None and media_url != "" and media_url in config["media_type_by_media_use"]:
+            return config["media_type_by_media_use"][media_url]
 
     # Determine if the incoming filepath matches a registered eEmbed media type.
     oembed_media_type = get_oembed_url_media_type(config, filepath)

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from islandora_workbench.drupal.client import get_integration_module_version
-from islandora_workbench.utils.string_utils import convert_semver_to_number
+from islandora_workbench.utils import convert_semver_to_number
 
 
 def create_temp_dir(config: dict):

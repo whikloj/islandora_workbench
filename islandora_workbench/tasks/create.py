@@ -18,17 +18,20 @@ from islandora_workbench.data_io.output_csv import OutputCSVWriter
 from islandora_workbench.data_io.rollback import RollbackMgr
 from islandora_workbench.drupal.fields import WorkbenchFieldFactory, get_required_bundle_fields, get_field_definitions
 from islandora_workbench.tasks import register_task
-from islandora_workbench.tasks.base import Task
+from islandora_workbench.tasks.base import Task, validate_media_type_and_extensions
 from islandora_workbench.exceptions import WorkbenchValidationException, WorkbenchValidationWarning, WorkbenchException
-from workbench_utils import is_running_in_docker, get_additional_files_config, ping_remote_file, paged_content_ignore_file, get_page_title_from_template
+from islandora_workbench.utils import get_file_hash_from_local, value_is_numeric, check_file_exists, \
+    get_sequence_indicator_from_filename, file_is_utf8, truncate_csv_value
+from workbench_utils import is_running_in_docker, ping_remote_file, paged_content_ignore_file, \
+    get_page_title_from_template, set_media_type
 from islandora_workbench.checks.internal import check_rollback_file_path_directories
 from islandora_workbench.external_scripts import execute_entity_post_task_script
 from islandora_workbench.drupal.client import ping_node, get_term_id_from_uri, get_all_representations_of_term, \
-    create_node, create_url_alias, create_media, get_entity_fields, ping_view_endpoint, \
-    ping_entity_reference_view_endpoint, verify_node_exists_by_key
-from islandora_workbench.drupal.utils import validate_language_code, get_nid_from_url_alias
-from islandora_workbench.utils import value_is_numeric, file_is_utf8, get_sequence_indicator_from_filename, \
-    truncate_csv_value, get_file_hash_from_local, check_file_exists
+    create_url_alias, get_entity_fields, ping_view_endpoint, ping_entity_reference_view_endpoint, \
+    verify_node_exists_by_key, ping_media_bundle
+from islandora_workbench.drupal.node import create_node, get_nid_from_url_alias
+from islandora_workbench.drupal.media import create_media
+from islandora_workbench.drupal.utils import validate_language_code
 
 
 @register_task("create")
@@ -42,9 +45,10 @@ class CreateTask(Task):
         temp_required_fields = get_required_bundle_fields(self.ctx["config"], "node", self.ctx["config"]["content_type"])
         temp_required_fields.extend([self.id_field, "title"])
         if (
-                self.ctx["config"]["nodes_only"] is False
-                and self.ctx["config"]["paged_content_from_directories"] is False
-                and self.ctx["config"]["paged_content_from_directories_parents_exist"] is False
+            self.ctx["config"]["nodes_only"] is False
+            and self.ctx["config"]["paged_content_from_directories"] is False
+            and self.ctx["config"]["paged_content_from_directories_parents_exist"] is False
+            and self.ctx["config"]["allow_missing_files"] is False
         ):
             temp_required_fields.append("file")
         self.required_fields = tuple(temp_required_fields)
@@ -73,6 +77,11 @@ class CreateTask(Task):
     def general_checks(self):
         """Perform general checks for a create task."""
         validate_input_dir(self.ctx["config"])
+
+        if self.ctx["config"]["nodes_only"] is False and self.ctx["config"]["keep_filename_parent_directory"] is False:
+            self.ctx["log"].info(
+                "Parent directory names for files will not be used when creating Drupal media, but the directory names will appear in Workbench messages and log entries."
+            )
 
         if len(self.field_configs["entity_fields"]) == 0:
             message = "Workbench cannot retrieve field definitions from Drupal. Please confirm that the Field, Field Storage, and Entity Form Display REST resources are enabled."
@@ -336,6 +345,7 @@ class CreateTask(Task):
                         validate_media_use_tid_in_additional_files_setting(self.ctx["config"], media_use_tid, additional_file_field)
                     except WorkbenchValidationWarning as e:
                         self.ctx["log"].warning(str(e))
+
         if self.ctx["config"]["paged_content_from_directories"] or self.ctx["config"]["paged_content_from_directories_parents_exist"]:
             if "paged_content_page_model_tid" not in self.config_keys:
                 self.ctx["log"].error('Configuration requires "paged_content_page_model_tid" setting when creating paged content.')
@@ -554,6 +564,11 @@ class CreateTask(Task):
                         print_only=True
                     )
 
+
+            if "file" in row and len(row["file"]) != 0:
+                validate_media_type_and_extensions(self.ctx, self.id_field, row, "file")
+
+
         if "image_alt_text" in row:
             if len(row["image_alt_text"]) > self.ctx["config"]["max_image_alt_text_length"]:
                 image_alt_text = row["image_alt_text"]
@@ -738,6 +753,11 @@ class CreateTask(Task):
 
     def prepare_run(self):
         # Prepare for the create task (e.g., validate input, set up environment)
+        if self.ctx["config"]["nodes_only"] is False and self.ctx["config"]["keep_filename_parent_directory"] is False:
+            self.ctx["log"].info(
+                "Parent directory names for files will not be used when creating Drupal media, but the directory names will appear in Workbench messages and log entries."
+            )
+
         self.ctx["log"].info(
             f'Using the CSV ID to node ID map at "{self.ctx["config"]["csv_id_to_node_id_map_path"]}".'
         )
@@ -1218,7 +1238,7 @@ class CreateTask(Task):
             self.ctx["log"].error(f"Node for CSV record {id_field} not created. See log for more information.")
             return
 
-    def finish(self):
+    def finish_check(self):
         # Finalize the create task (e.g., summarize results, clean up)
         pass
 

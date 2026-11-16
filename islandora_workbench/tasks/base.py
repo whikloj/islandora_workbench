@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 from abc import abstractmethod, ABC
 from typing import Union
 
@@ -8,17 +9,17 @@ import requests_cache
 from islandora_workbench.checks.common import common_checks_before_task, common_checks_after_task
 from islandora_workbench.checks.csv_checks import check_row_field_count, ParentPrecedesChildCheck
 from islandora_workbench.data_io.csv.csv_reader import CsvReader
-from islandora_workbench.drupal.client import ping_islandora
+from islandora_workbench.drupal.client import ping_islandora, ping_media_bundle
 from islandora_workbench.exceptions import WorkbenchValidationException, WorkbenchException
-from islandora_workbench.utils.remote_utils import download_remote_archive_file
-from islandora_workbench.utils.utils import get_file_hash_from_local, check_for_required_config_keys, prompt_user, \
-    unzip_archive, check_drupal_core_version
+from islandora_workbench.external_scripts import execute_shutdown_script
+from islandora_workbench.utils import get_file_hash_from_local, check_for_required_config_keys, prompt_user, \
+    check_drupal_core_version, download_remote_archive_file, unzip_archive, get_remote_file_extension
 from islandora_workbench.internal import create_temp_dir, check_integration_module_version
 from workbench_checks import _generate_geolocation_field_list, _generate_link_field_list, \
     _generate_authority_link_field_list, _generate_edtf_field_list, _generate_taxonomy_term_reference_field_list, \
     _generate_typed_relation_field_list, _generate_cardinality_field_list, _generate_max_length_field_list, \
     _generate_text_with_allowed_field_list, _generate_numeric_field_list, _generate_media_field_list
-
+from workbench_utils import set_media_type, get_registered_media_extensions
 
 
 class Task(ABC):
@@ -56,6 +57,8 @@ class Task(ABC):
     is_use_csv: bool = True
     # Are we doing validation (--check)? (default: False)
     is_check_mode: bool = False
+    # Check log message, defaults "Starting configuration check for <task> task using config file: <config_file_path>"
+    check_log_message: str = ""
     # Field configurations
     field_configs: dict
     # Various field types to make validation of these fields that exist easier, see generate_field_lists()
@@ -89,6 +92,9 @@ class Task(ABC):
         self.field_types: dict = {}
         # testing flags to allow passing checks run at general check level to the row_check level.
         self.testing_flags: dict = {}
+        # Set default check log message if not provided
+        if len(self.check_log_message) == 0:
+            self.check_log_message = f"Starting configuration check for {self.ctx['config']['task']} task using config file: {self.ctx['config']['config_file_path']}"
         self.general_setup()
 
     def general_setup(self):
@@ -108,7 +114,6 @@ class Task(ABC):
         self.field_types["max_length"] = _generate_max_length_field_list(self.field_configs["entity_field_definitions"], csv_columns)
         self.field_types["numeric_fields"] = _generate_numeric_field_list(self.field_configs["entity_field_definitions"], csv_columns)
         self.field_types["media_fields"] = _generate_media_field_list(self.ctx["config"], csv_columns)
-
 
 
     def validate_required_fields(self):
@@ -159,7 +164,7 @@ class Task(ABC):
             self.ctx["log"].info(f"OK, all {self.ctx['csv'].get_row_count()} rows in the CSV file have the same number of columns as there are headers ({len(self.ctx['csv'].field_names)}).")
 
 
-        common_checks_before_task(self.ctx, self.is_use_csv)
+        common_checks_before_task(self.ctx, self.is_use_csv, self.check_log_message)
         self.general_checks()
         if self.is_use_csv:
             self.validate_required_fields()
@@ -174,7 +179,11 @@ class Task(ABC):
         parent_id_checker.finish(self.ctx)
 
         common_checks_after_task(self.ctx)
-        self.finish()
+        self.finish_check()
+
+    def finish_check(self):
+        """Finish the task, run once per task; each task can override this. Runs for check, not run."""
+        pass
 
     def prepare(self):
         """Prepare the task for execution."""
@@ -244,10 +253,36 @@ class Task(ABC):
 
         check_drupal_core_version(self.ctx)
 
+    def finish_run(self):
+        """Summary, post-run output. Only runs for run, not check."""
+        if self.ctx["config"]["secondary_tasks"] is not None and len(self.ctx["config"]["secondary_tasks"]) > 0:
+            for secondary_config_file in self.ctx["config"]["secondary_tasks"]:
+                self.ctx["log"].info("Executing secondary task using configuration file " + secondary_config_file + ".")
+                cmd = [self.ctx["config"]["path_to_python"], self.ctx["config"]["path_to_workbench_script"], "--config",
+                    secondary_config_file, ]
+                output = subprocess.run(cmd)
 
-    def finish(self):
-        """Summary, post-run output."""
-        pass
+        # Execute shutdown scripts, if any are configured.
+        if "shutdown" in self.config_keys and len(self.ctx["config"]["shutdown"]) > 0:
+            for command in self.ctx["config"]["shutdown"]:
+                self.ctx["log"].info(f"Executing shutdown script {command}")
+                output, return_code = execute_shutdown_script(self.ctx["config"], command, self.ctx["config"])
+                if return_code == 0:
+                    self.ctx["log"].info(f"Shutdown script {command} executed successfully.")
+                else:
+                    self.ctx["log"].error(
+                        f"Shutdown script {command} failed with exit code {str(return_code)}."
+                    )
+
+        self.ctx["log"].info(f"Islandora Workbench successfully completed.")
+
+        if os.environ.get("ISLANDORA_WORKBENCH_PRIMARY_TASK_TEMP_DIR") is not None:
+            os.environ.pop("ISLANDORA_WORKBENCH_PRIMARY_TASK_TEMP_DIR")
+        if os.environ.get("ISLANDORA_WORKBENCH_SECONDARY_TASKS") is not None:
+            os.environ.pop("ISLANDORA_WORKBENCH_SECONDARY_TASKS")
+
+        if self.ctx["config"]["completion_message"] is not None:
+            self.ctx["log"].info(self.ctx["config"]["completion_message"])
 
     def run(self):
         """shared lifecycle; also owns progress bar and log lines"""
@@ -264,7 +299,7 @@ class Task(ABC):
         for row in self.rows():
             row_count += 1
             self.process_row(row, row_count)
-        self.finish()
+        self.finish_run()
 
     def rows(self):
         """Generator for rows; defaults to using a CSV file."""
@@ -300,3 +335,47 @@ class Task(ABC):
         :param row_number: The row number (1-based) for logging purposes.
         """
         pass
+
+
+def validate_media_type_and_extensions(ctx, id_field, row: dict, field_name: str):
+    """Validate that the media type exists in Drupal and that the file extension is allowed for that media type.
+    :param ctx: The context dictionary containing configuration and logging information.
+    :param id_field: The name of the CSV field containing the ID.
+    :param row: The CSV row being checked.
+    :param field_name: The name of the CSV field containing the file path.
+    :raises WorkbenchValidationException: If the media type does not exist in Drupal or if the file extension is not allowed for that media type.
+    """
+    file_path = row[field_name].strip()
+    media_type = set_media_type(
+        ctx["config"], file_path, field_name, row
+    )
+    media_bundle_response_code = ping_media_bundle(
+        ctx["config"], media_type
+    )
+    if media_bundle_response_code == 404:
+        message = f'File "{file_path}" identified in CSV row {row[id_field]} will create a media of type ({media_type}), but that media type is not configured in the destination Drupal. Please make sure your media type configuration matches your Drupal configuration.'
+        ctx["log"].error(message)
+        raise WorkbenchValidationException(message)
+
+    # Check that each file's extension is allowed for the current media type. 'file' is the only
+    # CSV field to check here. Files added using the 'additional_files' setting are checked below.
+    extension = os.path.splitext(file_path)[1].lstrip(".").lower()
+    if file_path.startswith("http"):
+        # First check to see if the file has an extension.
+        if len(extension) == 0:
+            extension = get_remote_file_extension(
+                ctx["config"], file_path
+            )
+            extension = extension.lstrip(".")
+
+    media_type_file_field = ctx["config"]["media_type_file_fields"][media_type]
+    registered_extensions = get_registered_media_extensions(
+        ctx["config"], media_type, media_type_file_field
+    )
+    if media_type_file_field in registered_extensions and extension not in registered_extensions[
+        media_type_file_field]:
+        message = (
+            f'File "{file_path}" in CSV row "{row[id_field]}" has an extension ({extension}) that is not allowed in the "{media_type_file_field}" field of the "{media_type}" media type.')
+        ctx["log"].error(message)
+        if not ctx["config"]["perform_soft_checks"]:
+            raise WorkbenchValidationException(message)

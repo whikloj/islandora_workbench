@@ -7,7 +7,7 @@ import tempfile
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from islandora_workbench.drupal.utils import get_nid_from_url_without_config
+from islandora_workbench.drupal.node import get_nid_from_url_without_config
 from islandora_workbench.utils import value_is_numeric
 
 """ The full hostname and scheme of the Drupal installation for the integration tests. """

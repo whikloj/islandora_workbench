@@ -17,19 +17,18 @@ from islandora_workbench.checks import validation
 from islandora_workbench.data_io.csv import csv_reader
 from islandora_workbench.exceptions import WorkbenchValidationException
 from workbench_utils import (get_entity_fields, check_csv_file_exists, ping_remote_file,
-                             get_field_definitions, get_entity_reference_view_endpoints,
-                             ping_view_endpoint, set_media_type,
+                             get_field_definitions, ping_view_endpoint, set_media_type,
                              ping_media_bundle, get_registered_media_extensions,
                              get_additional_files_config, paged_content_ignore_file, ping_media, )
 from islandora_workbench.data_io.contact_sheet import generate_contact_sheet_from_csv
 from islandora_workbench.checks.internal import check_rollback_file_path_directories
-from islandora_workbench.utils.remote_utils import get_remote_file_extension
+from islandora_workbench.utils import get_remote_file_extension
 from islandora_workbench.data_io.csv.csv_process import replace_field_labels_with_names
 from islandora_workbench.drupal.client import ping_node, ping_term
 from islandora_workbench.drupal.utils import validate_language_code
 from islandora_workbench.utils import file_is_utf8, get_sequence_indicator_from_filename, get_file_hash_from_local, \
     create_temp_dir, check_for_required_config_keys, check_integration_module_version, check_file_exists
-from islandora_workbench.drupal import ping_islandora, client
+from islandora_workbench.drupal import ping_islandora, client, media
 from islandora_workbench.data_io.csv.csv_reader import CsvReader
 from islandora_workbench.checks.validation import validate_weight_value, validate_media_track_fields, \
     validate_numeric_fields, validate_csv_field_length, validate_text_list_fields, validate_input_dir, \
@@ -1542,7 +1541,7 @@ def _task_specific_checks_update_media_by_node(
     :param reader: WorkbenchCsvReader - the CSV reader object
     """
     for row_num, row in enumerate(reader.get_csv_data(), start=1):
-        node_media_ids = client.get_node_media_ids(
+        node_media_ids = media.get_node_media_ids(
             config,
             row[config["id_field"]],
             media_use_tids=config["update_media_by_node_media_use_tids"],

@@ -17,11 +17,11 @@ from islandora_workbench import utils
 from islandora_workbench.checks import validation
 from islandora_workbench.data_io.csv import csv_process, csv_cache
 from islandora_workbench.drupal import utils, client
-from islandora_workbench.utils import string_utils, remote_utils
+from islandora_workbench.config import WorkbenchConfig
 
 sys.path.append(str(Path(os.path.abspath(__file__)).parent.parent.parent))
 import workbench_utils
-from WorkbenchConfig import WorkbenchConfig
+
 
 
 class TestCompareStings(unittest.TestCase):
@@ -1000,7 +1000,7 @@ class TestDedupedFilePaths(unittest.TestCase):
             ["/tmp/dir/dog_05.zip", "/tmp/dir/dog_6.zip"],
         ]
         for path_pair in paths:
-            deduped_path = string_utils.get_deduped_file_path(path_pair[0])
+            deduped_path = utils.get_deduped_file_path(path_pair[0])
             self.assertEqual(deduped_path, path_pair[1])
 
 
@@ -1547,7 +1547,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "field_for_remote_filename": False,
         }
 
-        path = remote_utils.get_preprocessed_file_path(
+        path = utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record
         )
         expected_path = os.path.join(
@@ -1573,7 +1573,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "use_node_title_for_remote_filename": True,
         }
 
-        path = remote_utils.get_preprocessed_file_path(
+        path = utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record
         )
         expected_path = os.path.join(
@@ -1599,7 +1599,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "use_nid_in_remote_filename": True,
         }
 
-        path = remote_utils.get_preprocessed_file_path(
+        path = utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record, node_id=456
         )
         expected_path = os.path.join(
@@ -1626,7 +1626,7 @@ class TestGetPreprocessedFilePath(unittest.TestCase):
             "field_for_remote_filename": "field_description",
         }
 
-        path = remote_utils.get_preprocessed_file_path(
+        path = utils.get_preprocessed_file_path(
             self.config, "file", self.node_csv_record, node_id=456
         )
         expected_path = os.path.join(
@@ -2208,7 +2208,7 @@ class TestGeneralTests(unittest.TestCase):
     # own assertions matched ping_content_type()'s URL exactly, not
     # get_entity_fields()'s separate field-fetching call).
 
-    @mock.patch("workbench_utils.issue_request")
+    @mock.patch("islandora_workbench.drupal.client.issue_request")
     def test_ping_content_type_valid(self, mock_issue_request):
         """Tests that ping_content_type() returns 200 and requests the
         correct URL for a content type that exists.
@@ -2226,7 +2226,7 @@ class TestGeneralTests(unittest.TestCase):
         )
         mock_issue_request.assert_called_with(self.base_config, "GET", expected_url)
 
-    @mock.patch("workbench_utils.issue_request")
+    @mock.patch("islandora_workbench.drupal.client.issue_request")
     def test_ping_content_type_invalid(self, mock_issue_request):
         """Tests that ping_content_type() returns 404 for a content type
         that doesn't exist. ping_content_type() itself does not raise
@@ -2241,7 +2241,7 @@ class TestGeneralTests(unittest.TestCase):
 
         self.assertEqual(result, 404)
 
-    @mock.patch("workbench_utils.ping_content_type")
+    @mock.patch("islandora_workbench.drupal.client.ping_content_type")
     def test_get_entity_fields_invalid_content_type(self, mock_ping_content_type):
         """Tests that get_entity_fields() exits with the correct error
         message when ping_content_type() reports the configured content
@@ -2269,7 +2269,7 @@ class TestGeneralTests(unittest.TestCase):
 class TestExpandUserInUtils(unittest.TestCase):
     def test_check_file_exists_expands_tilde(self):
         with mock.patch(
-            "workbench_utils.os.path.isfile", return_value=True
+            "islandora_workbench.utils.os.path.isfile", return_value=True
         ) as mock_isfile:
             utils.check_file_exists({}, "~/test_file.txt")
         called_path = mock_isfile.call_args[0][0]
@@ -2286,13 +2286,14 @@ class TestDownloadFileFromDrupal(unittest.TestCase):
             "user_agent": "Islandora Workbench",
         }
 
-    @mock.patch("workbench_utils.requests.get")
+
+    @mock.patch("islandora_workbench.drupal.media.requests.get")
     @mock.patch(
-        "workbench_utils.find_file_url_in_media",
+        "islandora_workbench.drupal.media.find_file_url_in_media",
         return_value="https://example.com/system/files/2026-10/file.jpg",
     )
-    @mock.patch("workbench_utils.resolve_media_use_term_id", return_value="17")
-    @mock.patch("workbench_utils.get_media_list", return_value=[{}])
+    @mock.patch("islandora_workbench.drupal.media.resolve_media_use_term_id", return_value="17")
+    @mock.patch("islandora_workbench.drupal.media.get_media_list", return_value=[{}])
     def test_download_sends_user_agent(
         self,
         mock_get_media_list,

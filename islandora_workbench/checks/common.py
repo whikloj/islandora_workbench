@@ -3,6 +3,7 @@ import os
 import subprocess
 
 from islandora_workbench.checks.csv_checks import csv_checks
+from islandora_workbench.checks.validation import validate_input_dir
 from islandora_workbench.exceptions import WorkbenchValidationException
 from workbench_utils import ping_remote_file
 from islandora_workbench.checks.internal import check_for_workbench_updates
@@ -164,15 +165,18 @@ def postprocess_script_checks(ctx: dict):
         if post_action_scripts_present is True:
             ctx["log"].info("OK, registered post-action scripts found and executable.")
 
-def common_checks_before_task(ctx: dict, use_csv: bool = False):
+def common_checks_before_task(ctx: dict, use_csv: bool, log_message: str):
     """Run common checks for all tasks before the task specific checks are run.
 
     :param ctx: The context to use
-    :param use_csv: Whether to perform CSV checks (default: False)
+    :param use_csv: Whether to perform CSV checks
+    :param log_message: The log message to display at the start of the checks
     """
-    ctx["log"].info("Starting configuration check for create task using config file: " + ctx["config"]["current_config_file_path"])
+    if log_message:
+        ctx["log"].info(log_message)
 
     check_for_workbench_updates(ctx["context"]["config"])
+    validate_input_dir(ctx["config"])
     input_data_zip_archives_checks(ctx)
 
     bootstrap_script_checks(ctx)

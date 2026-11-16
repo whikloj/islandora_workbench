@@ -153,7 +153,7 @@ class ParentPrecedesChildCheck:
 
         if ctx["config"]["query_csv_id_to_node_id_map_for_parents"] is True and ctx["config"][
                 "csv_id_to_node_id_map_path"] is not False:
-            csv_id_to_node_map_path = ctx["config"]["csv_id_to_node_id_map_path"]
+
             if (len(ctx["config"]["csv_id_to_node_id_map_allowed_hosts"]) > 0 and ctx["config"][
                 "query_csv_id_to_node_id_map_for_parents"] is True):
                 csv_id_to_node_id_map_allowed_hosts_message = "Limiting"
@@ -165,27 +165,12 @@ class ParentPrecedesChildCheck:
             message = f"Validating parent IDs in the CSV ID to node ID map, please wait. {csv_id_to_node_id_map_allowed_hosts_message}"
             ctx["log"].info(message)
 
-            # First, confirm the database exists; if not, tell the user and exit.
-            if not os.path.exists(csv_id_to_node_map_path):
-                message = f"Can't find CSV ID to node ID database path at {csv_id_to_node_map_path}."
-                self.ctx["log"].error(message)
-                raise WorkbenchValidationException(message)
-
-            csv_id_to_node_id_map_allowed_hosts_sql = get_csv_id_to_node_id_map_allowed_hosts_sql(self.ctx["config"])
-
             for n, row_id, parent in self.pending:
-                if self.ctx["config"]["ignore_duplicate_parent_ids"] is True:
-                    query = (
-                        "select node_id from csv_id_to_node_id_map where " + csv_id_to_node_id_map_allowed_hosts_sql + f' csv_id = "{parent}" order by timestamp desc limit 1')
-                else:
-                    query = (
-                        "select node_id from csv_id_to_node_id_map where" + csv_id_to_node_id_map_allowed_hosts_sql + " csv_id = ?")
-                parent_in_id_map_result = sqlite_manager(
-                    self.ctx["config"], operation="select", query=query, db_file_path=csv_id_to_node_map_path, )
+                parent_in_id_map_result = ctx["node_map"].get_node_id(parent)
 
-                if len(parent_in_id_map_result) > 1:
+                if isinstance(parent_in_id_map_result, list) and len(parent_in_id_map_result) > 1:
                     message = f'Row {n} (ID {row_id}): Query of ID map for parent ID "{parent}" returned multiple node IDs: ({", ".join([row["node_id"] for row in parent_in_id_map_result])}).'
                     ctx["log"].warning(message)
-                elif len(parent_in_id_map_result) == 0:
+                elif parent_in_id_map_result is None:
                     message = f'Row {n} (ID {row_id}): Query of ID map for parent ID "{parent}" returned no node IDs.'
                     ctx["log"].warning(message)

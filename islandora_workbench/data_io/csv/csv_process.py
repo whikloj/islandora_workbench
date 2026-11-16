@@ -2,13 +2,10 @@ import collections
 import copy
 import csv
 import itertools
-import json
-import logging
 import os
 import random
 import re
 import string
-import sys
 import tempfile
 import uuid
 from typing import Union, OrderedDict
@@ -148,9 +145,6 @@ def write_preprocessed_csv(ctx: dict, source_file_path: str, cache_path: str) ->
                 )
             else:
                 csv_reader_fieldnames = list(csv_reader.fieldnames)
-
-            if config["task"] == "update_media_by_node":
-                csv_reader_fieldnames.append("media_id")
 
             #  Remove any columns the user has configured to ignore.
             csv_reader_fieldnames = [
